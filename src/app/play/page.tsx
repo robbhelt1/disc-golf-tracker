@@ -89,6 +89,29 @@ export default function Play() {
     router.push('/');
   };
 
+  // --- HELPER: CALCULATE CURRENT TOTALS ---
+  const getPlayerTotals = (player: string) => {
+    const playerScores = scores[player] || {};
+    let totalStrokes = 0;
+    let totalPar = 0;
+
+    // Loop through all holes defined in the course
+    COURSE_DATA.forEach(h => {
+      // Only count holes that have a score entered
+      if (playerScores[h.hole]) {
+        totalStrokes += playerScores[h.hole];
+        totalPar += h.par;
+      }
+    });
+
+    const relativeScore = totalStrokes - totalPar;
+    // Format: "+2", "-1", "E" (for Even)
+    let displayRel = relativeScore > 0 ? `+${relativeScore}` : `${relativeScore}`;
+    if (relativeScore === 0) displayRel = "E";
+
+    return { totalStrokes, displayRel, relativeScore };
+  };
+
   // --- RENDER: SETUP SCREEN ---
   if (step === 1) {
     return (
@@ -147,23 +170,40 @@ export default function Play() {
       <div className="flex-1 overflow-y-auto">
         {players.map(player => {
           const s = scores[player][currentHole.hole] || currentHole.par;
+          const { totalStrokes, displayRel, relativeScore } = getPlayerTotals(player);
+          
+          // Color code the score text (Red for over par, Green for under)
+          let scoreColor = "text-gray-500";
+          if (relativeScore < 0) scoreColor = "text-green-600"; // Under par (Good)
+          if (relativeScore > 0) scoreColor = "text-red-500";   // Over par (Bad)
+
           return (
-            <div key={player} className="bg-white rounded-lg p-4 mb-3 flex items-center justify-between text-gray-800">
-              <span className="font-bold text-xl truncate w-1/3">{player}</span>
-              
-              <div className="flex items-center gap-4">
-                <button onClick={() => updateScore(player, -1)} className="w-12 h-12 bg-red-100 text-red-600 rounded-full text-2xl font-bold">-</button>
-                <span className="text-3xl font-bold w-8 text-center">{s}</span>
-                <button onClick={() => updateScore(player, 1)} className="w-12 h-12 bg-green-100 text-green-600 rounded-full text-2xl font-bold">+</button>
+            <div key={player} className="bg-white rounded-lg p-4 mb-3 flex flex-col text-gray-800 shadow-md">
+              {/* TOP ROW: Name and Totals */}
+              <div className="flex justify-between items-center mb-2 border-b pb-2">
+                <span className="font-bold text-xl truncate">{player}</span>
+                <div className="flex items-center gap-2">
+                   {/* This is the new "Total" area */}
+                   <span className={`font-bold ${scoreColor} text-lg`}>{displayRel}</span>
+                   <span className="text-gray-400 text-sm">({totalStrokes})</span>
+                </div>
+              </div>
+
+              {/* BOTTOM ROW: Score Buttons */}
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold text-gray-400 uppercase tracking-wider">Hole Score</span>
+                <div className="flex items-center gap-4">
+                  <button onClick={() => updateScore(player, -1)} className="w-12 h-12 bg-red-100 text-red-600 rounded-full text-2xl font-bold hover:bg-red-200">-</button>
+                  <span className="text-3xl font-bold w-8 text-center">{s}</span>
+                  <button onClick={() => updateScore(player, 1)} className="w-12 h-12 bg-green-100 text-green-600 rounded-full text-2xl font-bold hover:bg-green-200">+</button>
+                </div>
               </div>
             </div>
           )
         })}
       </div>
 
-      {/* NAVIGATION BUTTONS */}
       <div className="mt-4 flex gap-3">
-        {/* Only show PREV button if we are NOT on Hole 1 */}
         {currentHoleIndex > 0 && (
           <button 
             onClick={prevHole}
