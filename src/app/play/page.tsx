@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { supabase } from '@/supabase';
+import { supabase } from '@/supabase'; 
 import { useRouter } from 'next/navigation';
 import { COURSE_DATA, TEES } from '@/courseData';
 
