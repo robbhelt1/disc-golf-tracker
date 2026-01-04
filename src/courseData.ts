@@ -8,9 +8,10 @@ export const COURSE_DATA = [
   },
   { 
     hole: 2, 
-    par: 4, 
-    distances: { red: 350, white: 400, blue: 450 }, 
-    info: "Dogleg right. Big tree in the middle.", 
+    par: 3, 
+    distances: { red:1 , white:2 , blue:3  }, 
+    info: "If you are in the water either pond to your left or overflow pond straight ahead, or the stream to your right, you are OB and must 
+    take a 1 stroke penalty and throw from the drop zone", 
     image: "/hole2.jpg"
   },
   { 
