@@ -10,12 +10,9 @@ export default function Profile() {
   const [uploading, setUploading] = useState(false);
   const [user, setUser] = useState<any>(null);
   
-  // Profile Data
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
-  
-  // Stats
   const [stats, setStats] = useState<any>({ rounds: 0, best: '-', avg: '-' });
 
   useEffect(() => {
@@ -30,8 +27,7 @@ export default function Profile() {
     }
     setUser(user);
 
-    // Fetch Profile Info using the unique ID 🔑
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('profiles')
       .select('first_name, last_name, avatar_url')
       .eq('id', user.id) 
@@ -43,7 +39,6 @@ export default function Profile() {
       setAvatarUrl(data.avatar_url || '');
     }
 
-    // Fetch Stats based on player name or email prefix
     const { data: rounds } = await supabase
       .from('scorecards')
       .select('total_score')
@@ -55,7 +50,6 @@ export default function Profile() {
       const avg = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
       setStats({ rounds: rounds.length, best, avg });
     }
-
     setLoading(false);
   }
 
@@ -65,10 +59,23 @@ export default function Profile() {
     setter(formatted);
   };
 
+  async function saveToDatabase(url: string) {
+    const { error } = await supabase
+      .from('profiles')
+      .upsert({
+        id: user.id, 
+        email: user.email,
+        first_name: firstName,
+        last_name: lastName,
+        avatar_url: url,
+        updated_at: new Date()
+      });
+    if (error) console.error("Auto-save failed:", error.message);
+  }
+
   async function updateProfile() {
     setLoading(true);
     try {
-      // Upsert ensures we create or update the record correctly using the ID 🆔
       const { error } = await supabase
         .from('profiles')
         .upsert({
@@ -83,7 +90,6 @@ export default function Profile() {
       if (error) throw error;
       alert("Profile Updated Successfully!");
     } catch (error: any) {
-      console.error("Update Error:", error);
       alert("Error updating profile: " + error.message);
     } finally {
       setLoading(false);
@@ -93,27 +99,24 @@ export default function Profile() {
   async function uploadAvatar(event: any) {
     try {
       setUploading(true);
-      if (!event.target.files || event.target.files.length === 0) {
-        throw new Error('You must select an image to upload.');
-      }
+      if (!event.target.files || event.target.files.length === 0) return;
 
       const file = event.target.files[0];
       const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}-${Math.random()}.${fileExt}`;
+      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
       const filePath = `${fileName}`;
 
-      // 1. Upload the file to the 'avatars' bucket 📤
       let { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(filePath, file);
 
       if (uploadError) throw uploadError;
 
-      // 2. Retrieve the actual web link (Public URL) 🔗
       const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
       
-      // 3. Update the state so the image displays and is ready to save to the DB 🖼️
       setAvatarUrl(data.publicUrl);
+      // 🔥 CRITICAL: Save to DB immediately so the URL isn't lost
+      await saveToDatabase(data.publicUrl);
       
     } catch (error: any) {
       alert("Upload error: " + error.message);
@@ -127,87 +130,33 @@ export default function Profile() {
   return (
     <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center">
       <h1 className="text-3xl font-bold mb-6">My Profile</h1>
-      
       <div className="w-full max-w-md bg-white text-gray-800 rounded-xl p-6 shadow-2xl">
-        
-        {/* Avatar Section */}
         <div className="flex flex-col items-center mb-6">
           <div className="relative w-24 h-24 mb-4">
             {avatarUrl ? (
-              <Image 
-                src={avatarUrl} 
-                alt="Avatar" 
-                fill 
-                className="rounded-full object-cover border-4 border-green-600 shadow-md"
-                unoptimized // Use this if Next.js has trouble optimizing external Supabase URLs
-              />
+              <Image src={avatarUrl} alt="Avatar" fill className="rounded-full object-cover border-4 border-green-600 shadow-md" unoptimized />
             ) : (
-              <div className="w-full h-full bg-gray-200 rounded-full flex items-center justify-center text-gray-400 font-bold border-4 border-gray-100">
-                No Pic
-              </div>
+              <div className="w-full h-full bg-gray-200 rounded-full flex items-center justify-center text-gray-400 font-bold border-4 border-gray-100">No Pic</div>
             )}
-            <input
-              type="file"
-              id="single"
-              accept="image/*"
-              onChange={uploadAvatar}
-              disabled={uploading}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            />
+            <input type="file" id="single" accept="image/*" onChange={uploadAvatar} disabled={uploading} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
           </div>
-          <p className="text-xs text-gray-500 uppercase font-bold">
-            {uploading ? 'Uploading...' : 'Tap Image to Change'}
-          </p>
+          <p className="text-xs text-gray-500 uppercase font-bold">{uploading ? 'Uploading...' : 'Tap Image to Change'}</p>
         </div>
 
-        {/* Input Fields */}
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">First Name</label>
-            <input 
-              type="text" 
-              value={firstName}
-              onChange={(e) => handleNameChange(e.target.value, setFirstName)}
-              className="w-full p-3 border-2 border-gray-200 rounded-lg font-bold focus:border-green-500 outline-none"
-              placeholder="First Name"
-            />
+            <input type="text" value={firstName} onChange={(e) => handleNameChange(e.target.value, setFirstName)} className="w-full p-3 border-2 border-gray-200 rounded-lg font-bold outline-none" placeholder="First Name" />
           </div>
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Last Name</label>
-            <input 
-              type="text" 
-              value={lastName}
-              onChange={(e) => handleNameChange(e.target.value, setLastName)}
-              className="w-full p-3 border-2 border-gray-200 rounded-lg font-bold focus:border-green-500 outline-none"
-              placeholder="Last Name"
-            />
+            <input type="text" value={lastName} onChange={(e) => handleNameChange(e.target.value, setLastName)} className="w-full p-3 border-2 border-gray-200 rounded-lg font-bold outline-none" placeholder="Last Name" />
           </div>
         </div>
 
-        {/* Player Stats */}
-        <div className="bg-gray-50 rounded-lg p-4 mb-6 flex justify-between text-center border border-gray-100">
-           <div>
-              <div className="text-xl font-black text-gray-800">{stats.rounds}</div>
-              <div className="text-xs text-gray-500 font-bold uppercase">Rounds</div>
-           </div>
-           <div>
-              <div className="text-xl font-black text-green-600">{stats.best}</div>
-              <div className="text-xs text-gray-500 font-bold uppercase">Best</div>
-           </div>
-           <div>
-              <div className="text-xl font-black text-blue-600">{stats.avg}</div>
-              <div className="text-xs text-gray-500 font-bold uppercase">Avg</div>
-           </div>
-        </div>
-
-        <button 
-          onClick={updateProfile}
-          disabled={loading}
-          className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl text-xl shadow-lg transition-all active:scale-95"
-        >
+        <button onClick={updateProfile} disabled={loading} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl text-xl shadow-lg transition-all active:scale-95">
           {loading ? 'Saving...' : 'Save Profile'}
         </button>
-
       </div>
     </div>
   );
