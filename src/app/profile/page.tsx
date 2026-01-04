@@ -1,97 +1,208 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/supabase';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 
 export default function Profile() {
-  const [rounds, setRounds] = useState<any[]>([]);
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [userEmail, setUserEmail] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  
+  // Profile Data
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
+  
+  // Stats
+  const [stats, setStats] = useState<any>({ rounds: 0, best: '-', avg: '-' });
 
   useEffect(() => {
-    fetchMyRounds();
+    getProfile();
   }, []);
 
-  async function fetchMyRounds() {
-    // 1. Get Current User
+  async function getProfile() {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return; // Should redirect to login ideally
-    setUserEmail(user.email || '');
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    setUser(user);
 
-    // 2. Fetch Rounds created by this user
+    // Fetch Profile Info
     const { data, error } = await supabase
-      .from('scorecards')
-      .select('*')
-      .eq('created_by_user', user.email)
-      .order('created_at', { ascending: false }); // Newest first
+      .from('profiles')
+      .select('first_name, last_name, avatar_url')
+      .eq('email', user.email)
+      .single();
 
-    if (error) console.error('Error:', error);
-    else setRounds(data || []);
+    if (data) {
+      setFirstName(data.first_name || '');
+      setLastName(data.last_name || '');
+      setAvatarUrl(data.avatar_url || '');
+    }
+
+    // Fetch Stats (Rounds count, etc.)
+    const { data: rounds } = await supabase
+      .from('scorecards')
+      .select('total_score')
+      .eq('player_name', data?.first_name || user.email?.split('@')[0]); // Fallback logic
+
+    if (rounds && rounds.length > 0) {
+      const scores = rounds.map(r => r.total_score);
+      const best = Math.min(...scores);
+      const avg = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+      setStats({ rounds: rounds.length, best, avg });
+    }
+
     setLoading(false);
   }
 
-  // Calculate quick stats
-  const totalRounds = rounds.length;
-  const bestScore = rounds.length > 0 ? Math.min(...rounds.map(r => r.total_score)) : '-';
-  const averageScore = rounds.length > 0 
-    ? (rounds.reduce((acc, cur) => acc + cur.total_score, 0) / totalRounds).toFixed(1) 
-    : '-';
+  // Helper to Capitalize First Letter
+  const handleNameChange = (val: string, setter: any) => {
+    if (!val) { setter(''); return; }
+    // Capitalize first letter, keep rest as typed
+    const formatted = val.charAt(0).toUpperCase() + val.slice(1);
+    setter(formatted);
+  };
+
+  async function updateProfile() {
+    setLoading(true);
+    const { error } = await supabase.from('profiles').upsert({
+      email: user.email, // Key to match
+      first_name: firstName,
+      last_name: lastName,
+      avatar_url: avatarUrl,
+      updated_at: new Date()
+    }, { onConflict: 'email' });
+
+    if (error) {
+      alert("Error updating profile!");
+    } else {
+      alert("Profile Updated Successfully!");
+    }
+    setLoading(false);
+  }
+
+  async function uploadAvatar(event: any) {
+    try {
+      setUploading(true);
+      if (!event.target.files || event.target.files.length === 0) {
+        throw new Error('You must select an image to upload.');
+      }
+
+      const file = event.target.files[0];
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}-${Math.random()}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      // 1. Upload to Supabase Storage
+      let { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // 2. Get Public URL
+      const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      
+      // 3. Update State (user still needs to click "Save Profile" to commit to DB, or we can auto-save here)
+      setAvatarUrl(data.publicUrl);
+      
+    } catch (error: any) {
+      alert(error.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  if (loading) return <div className="min-h-screen bg-green-900 flex items-center justify-center text-white font-bold">Loading Profile...</div>;
 
   return (
-    <div className="min-h-screen bg-green-900 text-white p-6">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-8">
-        <Link href="/">
-          <button className="bg-green-700 hover:bg-green-600 text-white px-4 py-2 rounded-lg">
-            &larr; Home
-          </button>
-        </Link>
-        <h1 className="text-3xl font-bold">My Profile</h1>
-        <div className="w-20"></div> 
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
-        <div className="bg-white text-gray-800 p-4 rounded-xl text-center shadow-lg">
-          <div className="text-gray-500 text-xs font-bold uppercase">Rounds</div>
-          <div className="text-3xl font-black text-green-700">{totalRounds}</div>
-        </div>
-        <div className="bg-white text-gray-800 p-4 rounded-xl text-center shadow-lg">
-          <div className="text-gray-500 text-xs font-bold uppercase">Best</div>
-          <div className="text-3xl font-black text-blue-600">{bestScore}</div>
-        </div>
-        <div className="bg-white text-gray-800 p-4 rounded-xl text-center shadow-lg">
-          <div className="text-gray-500 text-xs font-bold uppercase">Avg</div>
-          <div className="text-3xl font-black text-orange-600">{averageScore}</div>
-        </div>
-      </div>
-
-      {/* Rounds History List */}
-      <h2 className="text-xl font-bold mb-4 border-b border-green-700 pb-2">My History</h2>
-      <div className="space-y-3">
-        {rounds.map((round) => (
-          <div key={round.id} className="bg-green-800 p-4 rounded-xl flex justify-between items-center shadow-md border border-green-700">
-            <div>
-              <div className="font-bold text-lg">{round.player_name}</div>
-              <div className="text-xs text-green-300">
-                {new Date(round.created_at).toLocaleDateString()} • {round.tee_color} Tees
+    <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center">
+      <h1 className="text-3xl font-bold mb-6">My Profile</h1>
+      
+      <div className="w-full max-w-md bg-white text-gray-800 rounded-xl p-6 shadow-2xl">
+        
+        {/* AVATAR UPLOAD SECTION */}
+        <div className="flex flex-col items-center mb-6">
+          <div className="relative w-24 h-24 mb-4">
+            {avatarUrl ? (
+              <Image 
+                src={avatarUrl} 
+                alt="Avatar" 
+                fill 
+                className="rounded-full object-cover border-4 border-green-600 shadow-md"
+              />
+            ) : (
+              <div className="w-full h-full bg-gray-200 rounded-full flex items-center justify-center text-gray-400 font-bold border-4 border-gray-100">
+                No Pic
               </div>
-              {/* EDIT BUTTON */}
-              <Link href={`/edit/${round.id}`}>
-                <button className="mt-2 bg-black/20 hover:bg-black/40 text-xs px-3 py-1 rounded text-green-100 border border-green-600">
-                  Edit Scores
-                </button>
-              </Link>
-            </div>
-            <div className="text-right">
-              <div className="text-2xl font-black">{round.total_score}</div>
-              <div className="text-xs text-green-300">Total</div>
-            </div>
+            )}
+            {/* Hidden File Input */}
+            <input
+              type="file"
+              id="single"
+              accept="image/*"
+              onChange={uploadAvatar}
+              disabled={uploading}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            />
           </div>
-        ))}
-        {rounds.length === 0 && !loading && (
-          <div className="text-center text-green-300 py-8 italic">No rounds played yet. Go hit the course!</div>
-        )}
+          <p className="text-xs text-gray-500 uppercase font-bold">
+            {uploading ? 'Uploading...' : 'Tap Image to Change'}
+          </p>
+        </div>
+
+        {/* NAME INPUTS */}
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">First Name</label>
+            <input 
+              type="text" 
+              value={firstName}
+              onChange={(e) => handleNameChange(e.target.value, setFirstName)}
+              className="w-full p-3 border-2 border-gray-200 rounded-lg font-bold focus:border-green-500 outline-none"
+              placeholder="Robb"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Last Name</label>
+            <input 
+              type="text" 
+              value={lastName}
+              onChange={(e) => handleNameChange(e.target.value, setLastName)}
+              className="w-full p-3 border-2 border-gray-200 rounded-lg font-bold focus:border-green-500 outline-none"
+              placeholder="Helt"
+            />
+          </div>
+        </div>
+
+        {/* STATS DISPLAY */}
+        <div className="bg-gray-50 rounded-lg p-4 mb-6 flex justify-between text-center border border-gray-100">
+           <div>
+              <div className="text-xl font-black text-gray-800">{stats.rounds}</div>
+              <div className="text-xs text-gray-500 font-bold uppercase">Rounds</div>
+           </div>
+           <div>
+              <div className="text-xl font-black text-green-600">{stats.best}</div>
+              <div className="text-xs text-gray-500 font-bold uppercase">Best</div>
+           </div>
+           <div>
+              <div className="text-xl font-black text-blue-600">{stats.avg}</div>
+              <div className="text-xs text-gray-500 font-bold uppercase">Avg</div>
+           </div>
+        </div>
+
+        <button 
+          onClick={updateProfile}
+          disabled={loading}
+          className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl text-xl shadow-lg transition-all active:scale-95"
+        >
+          {loading ? 'Saving...' : 'Save Profile'}
+        </button>
+
       </div>
     </div>
   );
