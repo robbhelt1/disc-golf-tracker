@@ -37,9 +37,11 @@ export default function Home() {
           </Link>
           {/* ----------------------- */}
           
-          <button className="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold py-3 px-4 rounded-lg">
-            View Leaderboard
-          </button>
+          <Link href="/leaderboard">
+            <button className="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold py-3 px-4 rounded-lg">
+              View Leaderboard
+            </button>
+          </Link>
         </div>
 
       </main>
