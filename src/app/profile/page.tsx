@@ -76,6 +76,12 @@ export default function Profile() {
               <div className="text-xs text-green-300">
                 {new Date(round.created_at).toLocaleDateString()} • {round.tee_color} Tees
               </div>
+              {/* EDIT BUTTON */}
+              <Link href={`/edit/${round.id}`}>
+                <button className="mt-2 bg-black/20 hover:bg-black/40 text-xs px-3 py-1 rounded text-green-100 border border-green-600">
+                  Edit Scores
+                </button>
+              </Link>
             </div>
             <div className="text-right">
               <div className="text-2xl font-black">{round.total_score}</div>

@@ -3,16 +3,16 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/supabase';
 import Link from 'next/link';
 
-// *** MAKE SURE THIS MATCHES YOUR LOGIN EMAIL ***
+// *** ADMIN CONFIGURATION ***
 const ADMIN_EMAIL = 'helt@oncuetech.com'; 
-// **********************************************
+// ***************************
 
 export default function Leaderboard() {
   const [scorecards, setScorecards] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   
-  // --- NEW: FILTER STATE ---
+  // --- FILTER STATE ---
   const [filterTee, setFilterTee] = useState('All'); // 'All', 'Red', 'White', 'Blue'
 
   useEffect(() => {
@@ -31,7 +31,7 @@ export default function Leaderboard() {
     const { data, error } = await supabase
       .from('scorecards')
       .select('*')
-      .order('total_score', { ascending: true });
+      .order('created_at', { ascending: false }); // Get newest first for the history list
 
     if (error) console.error('Error fetching:', error);
     else setScorecards(data || []);
@@ -39,7 +39,7 @@ export default function Leaderboard() {
   }
 
   async function deleteScore(id: number) {
-    if(!confirm("Are you sure you want to DELETE this round?")) return;
+    if(!confirm("Are you sure you want to DELETE this round? This cannot be undone.")) return;
     const { error } = await supabase.from('scorecards').delete().eq('id', id);
     if (error) alert("Error deleting: " + error.message);
     else {
@@ -48,16 +48,16 @@ export default function Leaderboard() {
     }
   }
 
-  // --- ANALYTICS ENGINE (With Filter) ---
+  // --- ANALYTICS ENGINE ---
   const playerStats: any = {};
 
-  // 1. First, filter the raw list based on the dropdown
+  // 1. Filter the raw list based on the dropdown
   const filteredScorecards = scorecards.filter(card => {
     if (filterTee === 'All') return true;
     return card.tee_color === filterTee;
   });
 
-  // 2. Then calculate stats on the filtered list
+  // 2. Calculate stats on the filtered list
   filteredScorecards.forEach(card => {
     const name = card.player_name;
     if (!playerStats[name]) {
@@ -68,6 +68,7 @@ export default function Leaderboard() {
     if (card.total_score < playerStats[name].bestScore) playerStats[name].bestScore = card.total_score;
   });
 
+  // 3. Sort by Average Score (Ascending)
   const leaderboardData = Object.values(playerStats).map((p: any) => ({
     ...p,
     average: (p.totalStrokes / p.rounds).toFixed(1)
@@ -75,6 +76,7 @@ export default function Leaderboard() {
 
   return (
     <div className="min-h-screen bg-green-900 text-white p-6">
+      {/* HEADER */}
       <div className="flex justify-between items-center mb-6">
         <Link href="/">
           <button className="bg-green-700 hover:bg-green-600 text-white px-4 py-2 rounded-lg">&larr; Home</button>
@@ -100,7 +102,7 @@ export default function Leaderboard() {
         </div>
       </div>
 
-      {/* STATS CARDS */}
+      {/* TOP 3 STATS CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         {leaderboardData.slice(0, 3).map((player: any, index) => (
           <div key={player.name} className={`p-4 rounded-xl shadow-lg text-center ${index === 0 ? 'bg-yellow-500 text-black' : 'bg-white text-gray-800'}`}>
@@ -112,7 +114,7 @@ export default function Leaderboard() {
         ))}
       </div>
 
-      {/* DETAILED TABLE */}
+      {/* DETAILED RANKING TABLE */}
       <div className="bg-white rounded-xl shadow-2xl overflow-hidden text-gray-800 mb-8">
         <table className="w-full text-left">
           <thead className="bg-gray-200">
@@ -141,7 +143,7 @@ export default function Leaderboard() {
         </table>
       </div>
 
-      {/* RECENT ROUNDS (With Admin Delete) */}
+      {/* RECENT ROUNDS HISTORY (With Admin Controls) */}
       <div className="mt-12">
         <h2 className="text-2xl font-bold text-green-100 mb-4">Recent Rounds ({filterTee})</h2>
         <div className="bg-green-800 rounded-xl p-4">
@@ -155,16 +157,27 @@ export default function Leaderboard() {
                 </div>
               </div>
 
+              {/* ADMIN CONTROLS: EDIT & DELETE */}
               {isAdmin && (
-                <button 
-                  onClick={() => deleteScore(card.id)}
-                  className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm font-bold"
-                >
-                  DELETE
-                </button>
+                <div className="flex gap-2">
+                  <Link href={`/edit/${card.id}`}>
+                    <button className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-bold shadow-md">
+                      EDIT
+                    </button>
+                  </Link>
+                  <button 
+                    onClick={() => deleteScore(card.id)}
+                    className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm font-bold shadow-md"
+                  >
+                    DELETE
+                  </button>
+                </div>
               )}
             </div>
           ))}
+          {filteredScorecards.length === 0 && (
+             <div className="text-center text-green-300 italic">No history found.</div>
+          )}
         </div>
       </div>
     </div>
