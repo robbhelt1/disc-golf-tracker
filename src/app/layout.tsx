@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import NavBar from "@/components/NavBar"; // <--- Import the new component
+// CHANGE: We are using a relative path (..) to find the components folder
+import NavBar from "../components/NavBar"; 
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -18,10 +19,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        {/* The Navigation Bar sits here, visible on all pages */}
         <NavBar /> 
-        
-        {/* The page content sits here */}
         {children}
       </body>
     </html>
