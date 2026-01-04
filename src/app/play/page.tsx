@@ -1,23 +1,64 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/supabase';
 import { useRouter } from 'next/navigation';
 import { COURSE_DATA, TEES } from '@/courseData';
 
 export default function Play() {
   const router = useRouter();
-  
-  // Game State
+  const [user, setUser] = useState<any>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
+
+  // --- 1. SECURITY CHECK (The Bouncer) ---
+  useEffect(() => {
+    async function checkUser() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push('/login'); // Kick to login if not authenticated
+      } else {
+        setUser(user);
+        setLoadingUser(false);
+      }
+    }
+    checkUser();
+  }, [router]);
+
+  // --- GAME STATE ---
   const [step, setStep] = useState(1); // 1 = Setup, 2 = Playing
   const [selectedTee, setSelectedTee] = useState('White');
   const [players, setPlayers] = useState<string[]>(['']); 
   const [currentHoleIndex, setCurrentHoleIndex] = useState(0); 
   
-  // Scorekeeping
+  // Score Storage: { "PlayerName": { 1: 3, 2: 4 ... } }
   const [scores, setScores] = useState<Record<string, Record<number, number>>>({});
 
-  // --- SETUP HELPERS ---
+  // --- HELPER: CALCULATE TOTALS (Real-time Math) ---
+  const getPlayerTotals = (player: string) => {
+    const playerScores = scores[player] || {};
+    let totalStrokes = 0;
+    let totalPar = 0;
+
+    // Loop through all holes to calculate running total
+    COURSE_DATA.forEach(h => {
+      // Only count holes where a score exists
+      if (playerScores[h.hole]) {
+        totalStrokes += playerScores[h.hole];
+        totalPar += h.par;
+      }
+    });
+
+    const relativeScore = totalStrokes - totalPar;
+    
+    // Format the display (e.g., "+2", "-1", "E")
+    let displayRel = relativeScore > 0 ? `+${relativeScore}` : `${relativeScore}`;
+    if (relativeScore === 0) displayRel = "E";
+
+    return { totalStrokes, displayRel, relativeScore };
+  };
+
+  // --- GAMEPLAY ACTIONS ---
   const addPlayer = () => setPlayers([...players, '']);
+  
   const updatePlayerName = (index: number, name: string) => {
     const newPlayers = [...players];
     newPlayers[index] = name;
@@ -28,6 +69,7 @@ export default function Play() {
     const realPlayers = players.filter(p => p.trim() !== '');
     if (realPlayers.length === 0) return alert("Add at least one player!");
     
+    // Initialize score object
     const initialScores: any = {};
     realPlayers.forEach(p => initialScores[p] = {});
     setScores(initialScores);
@@ -35,9 +77,9 @@ export default function Play() {
     setStep(2);
   };
 
-  // --- GAMEPLAY HELPERS ---
   const updateScore = (player: string, change: number) => {
     const currentHoleNum = COURSE_DATA[currentHoleIndex].hole;
+    // Default to Par if no score exists yet
     const currentScore = scores[player][currentHoleNum] || COURSE_DATA[currentHoleIndex].par;
     
     setScores({
@@ -50,9 +92,7 @@ export default function Play() {
   };
 
   const prevHole = () => {
-    if (currentHoleIndex > 0) {
-      setCurrentHoleIndex(currentHoleIndex - 1);
-    }
+    if (currentHoleIndex > 0) setCurrentHoleIndex(currentHoleIndex - 1);
   };
 
   const nextHole = () => {
@@ -64,20 +104,24 @@ export default function Play() {
   };
 
   const finishRound = async () => {
-    if(!confirm("Finish round and submit scores?")) return;
+    if(!confirm("Finish round and submit scores to the Leaderboard?")) return;
 
+    // Loop through every player and save their card
     for (const player of players) {
       const playerScores = scores[player];
       
       let total = 0;
       Object.values(playerScores).forEach(s => total += s);
 
+      // Prepare the data row for Supabase
       const dataToSave: any = {
         player_name: player,
         tee_color: selectedTee,
         total_score: total,
+        created_by_user: user.email // Tracks who uploaded this score
       };
 
+      // Map hole scores to columns hole_1, hole_2, etc.
       COURSE_DATA.forEach(h => {
         dataToSave[`hole_${h.hole}`] = playerScores[h.hole] || h.par;
       });
@@ -85,141 +129,11 @@ export default function Play() {
       await supabase.from('scorecards').insert(dataToSave);
     }
 
-    alert("Round Saved!");
-    router.push('/');
+    alert("Round Saved Successfully!");
+    router.push('/leaderboard'); // Send them straight to see the results
   };
 
-  // --- HELPER: CALCULATE CURRENT TOTALS ---
-  const getPlayerTotals = (player: string) => {
-    const playerScores = scores[player] || {};
-    let totalStrokes = 0;
-    let totalPar = 0;
-
-    // Loop through all holes defined in the course
-    COURSE_DATA.forEach(h => {
-      // Only count holes that have a score entered
-      if (playerScores[h.hole]) {
-        totalStrokes += playerScores[h.hole];
-        totalPar += h.par;
-      }
-    });
-
-    const relativeScore = totalStrokes - totalPar;
-    // Format: "+2", "-1", "E" (for Even)
-    let displayRel = relativeScore > 0 ? `+${relativeScore}` : `${relativeScore}`;
-    if (relativeScore === 0) displayRel = "E";
-
-    return { totalStrokes, displayRel, relativeScore };
-  };
-
-  // --- RENDER: SETUP SCREEN ---
-  if (step === 1) {
+  // --- LOADING SCREEN ---
+  if (loadingUser) {
     return (
-      <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center">
-        <h1 className="text-3xl font-bold mb-8">New Round Setup</h1>
-        
-        <div className="w-full max-w-md bg-white rounded-xl p-6 text-gray-800">
-          <label className="block font-bold mb-2">Select Tees</label>
-          <div className="flex gap-2 mb-6">
-            {TEES.map(tee => (
-              <button
-                key={tee}
-                onClick={() => setSelectedTee(tee)}
-                className={`flex-1 py-2 rounded font-bold border-2 ${selectedTee === tee ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 border-gray-200'}`}
-              >
-                {tee}
-              </button>
-            ))}
-          </div>
-
-          <label className="block font-bold mb-2">Who is playing?</label>
-          {players.map((p, i) => (
-            <input
-              key={i}
-              type="text"
-              placeholder={`Player ${i + 1} Name`}
-              value={p}
-              onChange={(e) => updatePlayerName(i, e.target.value)}
-              className="w-full p-3 mb-2 border rounded"
-            />
-          ))}
-          <button onClick={addPlayer} className="text-green-600 font-bold text-sm mb-6">+ Add Another Player</button>
-
-          <button onClick={startGame} className="w-full bg-green-600 text-white font-bold py-4 rounded-xl text-xl">
-            Start Game
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // --- RENDER: PLAYING SCREEN ---
-  const currentHole = COURSE_DATA[currentHoleIndex];
-
-  return (
-    <div className="min-h-screen bg-gray-900 text-white p-4 flex flex-col">
-      <div className="bg-green-800 p-4 rounded-xl mb-4 text-center">
-        <h2 className="text-4xl font-bold">Hole {currentHole.hole}</h2>
-        <div className="flex justify-center gap-6 mt-2 text-green-200 text-lg">
-          <span>Par {currentHole.par}</span>
-          <span>{currentHole.distance} ft</span>
-        </div>
-        <p className="mt-2 text-sm text-green-100 italic">{currentHole.info}</p>
-      </div>
-
-      <div className="flex-1 overflow-y-auto">
-        {players.map(player => {
-          const s = scores[player][currentHole.hole] || currentHole.par;
-          const { totalStrokes, displayRel, relativeScore } = getPlayerTotals(player);
-          
-          // Color code the score text (Red for over par, Green for under)
-          let scoreColor = "text-gray-500";
-          if (relativeScore < 0) scoreColor = "text-green-600"; // Under par (Good)
-          if (relativeScore > 0) scoreColor = "text-red-500";   // Over par (Bad)
-
-          return (
-            <div key={player} className="bg-white rounded-lg p-4 mb-3 flex flex-col text-gray-800 shadow-md">
-              {/* TOP ROW: Name and Totals */}
-              <div className="flex justify-between items-center mb-2 border-b pb-2">
-                <span className="font-bold text-xl truncate">{player}</span>
-                <div className="flex items-center gap-2">
-                   {/* This is the new "Total" area */}
-                   <span className={`font-bold ${scoreColor} text-lg`}>{displayRel}</span>
-                   <span className="text-gray-400 text-sm">({totalStrokes})</span>
-                </div>
-              </div>
-
-              {/* BOTTOM ROW: Score Buttons */}
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold text-gray-400 uppercase tracking-wider">Hole Score</span>
-                <div className="flex items-center gap-4">
-                  <button onClick={() => updateScore(player, -1)} className="w-12 h-12 bg-red-100 text-red-600 rounded-full text-2xl font-bold hover:bg-red-200">-</button>
-                  <span className="text-3xl font-bold w-8 text-center">{s}</span>
-                  <button onClick={() => updateScore(player, 1)} className="w-12 h-12 bg-green-100 text-green-600 rounded-full text-2xl font-bold hover:bg-green-200">+</button>
-                </div>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      <div className="mt-4 flex gap-3">
-        {currentHoleIndex > 0 && (
-          <button 
-            onClick={prevHole}
-            className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-4 rounded-xl text-xl shadow-lg"
-          >
-            &lt; Prev
-          </button>
-        )}
-        
-        <button 
-          onClick={nextHole}
-          className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl text-xl shadow-lg"
-        >
-          {currentHoleIndex < COURSE_DATA.length - 1 ? 'Next Hole >' : 'Finish Round'}
-        </button>
-      </div>
-    </div>
-  );
-}
+      <div className="min-h-screen bg-green-9
