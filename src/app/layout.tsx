@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-// CHANGE: We are using a relative path (..) to find the components folder
-import NavBar from "../components/NavBar"; 
+// CHANGE: Now we look in the current folder (./) because we moved components inside 'app'
+import NavBar from "./components/NavBar"; 
 
 const inter = Inter({ subsets: ["latin"] });
 
