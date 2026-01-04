@@ -149,8 +149,8 @@ export default function Play() {
       // Sort Players by Points (High is Good)
       return players.map(p => ({
         name: p,
-        score: `${matchStandings.points[p]} Pts`,
-        sortVal: matchStandings.points[p],
+        score: `${matchStandings.points[p] || 0} Pts`,
+        sortVal: matchStandings.points[p] || 0,
         detail: ''
       })).sort((a, b) => b.sortVal - a.sortVal);
     } 
@@ -214,7 +214,7 @@ export default function Play() {
     setScores({
       ...scores,
       [player]: {
-        ...scores[player],
+        ...(scores[player] || {}), // <--- Safe spread in case scores[player] is undefined
         [currentHoleNum]: currentScore + change
       }
     });
@@ -439,7 +439,8 @@ export default function Play() {
         ) : (
            // SOLO MODE RENDER
            players.map(player => {
-             const s = scores[player][currentHole.hole] || currentHole.par;
+             // FIX: Use Optional Chaining (?.) here to prevent crash if scores[player] is undefined
+             const s = scores[player]?.[currentHole.hole] || currentHole.par;
              return (
                <div key={player} className="bg-white rounded-xl p-3 flex justify-between items-center text-gray-800 shadow-md">
                  <div>
@@ -455,7 +456,7 @@ export default function Play() {
            })
         )}
 
-        {/* --- LIVE STANDINGS SECTION (NEW) --- */}
+        {/* --- LIVE STANDINGS SECTION --- */}
         <div className="mt-6">
            <div className="bg-black/40 rounded-t-xl p-2 text-center text-green-200 font-bold uppercase text-xs tracking-widest border border-green-700 border-b-0">
               Live Standings
@@ -474,7 +475,7 @@ export default function Play() {
                        <tr key={i} className={`border-b last:border-0 ${i === 0 ? 'bg-yellow-50' : ''}`}>
                           <td className="py-2 px-3 font-bold text-gray-400">{i + 1}</td>
                           <td className="py-2 px-3 font-bold">{r.name}</td>
-                          <td className={`py-2 px-3 font-black text-right ${r.score.includes('-') || r.score.includes('+') ? (r.score.startsWith('+') ? 'text-red-500' : 'text-green-600') : 'text-gray-800'}`}>
+                          <td className={`py-2 px-3 font-black text-right ${r.score.toString().includes('-') || r.score.toString().includes('+') ? (r.score.toString().startsWith('+') ? 'text-red-500' : 'text-green-600') : 'text-gray-800'}`}>
                              {r.score}
                           </td>
                        </tr>
