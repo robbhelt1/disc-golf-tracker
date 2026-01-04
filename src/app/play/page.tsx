@@ -6,33 +6,46 @@ import { COURSE_DATA, TEES } from '@/courseData';
 import Link from 'next/link';
 import Image from 'next/image';
 
+// Types for Team Logic
+type Team = {
+  name: string;
+  members: string[];
+};
+
 export default function Play() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [loadingUser, setLoadingUser] = useState(true);
 
-  // --- USER DIRECTORY STATE ---
+  // --- USER DIRECTORY ---
   const [registeredUsers, setRegisteredUsers] = useState<any[]>([]);
   const [selectedUserToAdd, setSelectedUserToAdd] = useState('');
-  const [players, setPlayers] = useState<string[]>([]); 
   
-  // --- GAME MODES ---
-  const MODES = ['Stroke Play', 'Match Play'];
+  // --- GAME CONFIG ---
+  const MODES = ['Stroke Play', 'Match Play', 'Doubles (2v2)', 'Triples (3v3)'];
   const [gameMode, setGameMode] = useState('Stroke Play');
+  const [selectedTee, setSelectedTee] = useState('White');
+  
+  // --- PLAYERS & TEAMS STATE ---
+  const [players, setPlayers] = useState<string[]>([]); // For Solo Modes
+  const [teams, setTeams] = useState<Team[]>([]);       // For Team Modes
+  
+  // --- SCORING STATE ---
+  // We store EVERY individual's score here, regardless of mode
+  const [scores, setScores] = useState<Record<string, Record<number, number>>>({});
+  
+  const [step, setStep] = useState(1);
+  const [currentHoleIndex, setCurrentHoleIndex] = useState(0); 
+  const [saving, setSaving] = useState(false);
 
   // --- INIT ---
   useEffect(() => {
     async function init() {
-      // 1. Check Auth
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/login'); 
-        return;
-      }
+      if (!user) { router.push('/login'); return; }
       setUser(user);
       setLoadingUser(false);
 
-      // 2. Fetch User Directory
       const { data: profiles } = await supabase
         .from('profiles')
         .select('email, first_name')
@@ -40,110 +53,125 @@ export default function Play() {
       
       if (profiles) setRegisteredUsers(profiles);
       
-      // Auto-add MYSELF
       const { data: myProfile } = await supabase.from('profiles').select('first_name').eq('email', user.email).single();
       const myName = myProfile?.first_name || user.email?.split('@')[0] || 'Me';
-      setPlayers((prev) => prev.length === 0 ? [myName] : prev);
+      
+      // Default to adding myself for solo modes
+      setPlayers(prev => prev.length === 0 ? [myName] : prev);
     }
     init();
   }, [router]);
 
-  // --- GAME STATE ---
-  const [step, setStep] = useState(1);
-  const [selectedTee, setSelectedTee] = useState('White');
-  const [currentHoleIndex, setCurrentHoleIndex] = useState(0); 
-  const [scores, setScores] = useState<Record<string, Record<number, number>>>({});
-  const [saving, setSaving] = useState(false);
+  // --- HELPER: IS TEAM MODE? ---
+  const isTeamMode = gameMode.includes('Doubles') || gameMode.includes('Triples');
 
   // --- SCORING ENGINES ---
 
-  // 1. STROKE PLAY (Standard)
-  const getStrokeStats = (player: string) => {
+  // 1. GET INDIVIDUAL STATS (Used in Solo Modes)
+  const getIndividualStats = (player: string) => {
     const playerScores = scores[player] || {};
-    let totalStrokes = 0;
-    let totalPar = 0;
-
+    let total = 0;
+    let par = 0;
     COURSE_DATA.forEach(h => {
       if (playerScores[h.hole]) {
-        totalStrokes += playerScores[h.hole];
-        totalPar += h.par;
+        total += playerScores[h.hole];
+        par += h.par;
+      }
+    });
+    const rel = total - par;
+    const displayRel = rel > 0 ? `+${rel}` : rel === 0 ? "E" : `${rel}`;
+    return { total, displayRel, rel };
+  };
+
+  // 2. GET TEAM STATS (Best Ball)
+  const getTeamStats = (team: Team) => {
+    let teamTotal = 0;
+    let teamPar = 0;
+    let currentHoleScore = 99; // Placeholder for current hole best
+
+    // Calculate Total for completed holes
+    COURSE_DATA.forEach(h => {
+      // Find the LOWEST score among all team members for this hole
+      const memberScores = team.members.map(m => scores[m]?.[h.hole] || 0);
+      // Filter out 0s (unplayed) unless everyone has 0
+      const playedScores = memberScores.filter(s => s > 0);
+      
+      if (playedScores.length > 0) {
+        const bestBall = Math.min(...playedScores);
+        teamTotal += bestBall;
+        teamPar += h.par;
       }
     });
 
-    const relativeScore = totalStrokes - totalPar;
-    let displayRel = relativeScore > 0 ? `+${relativeScore}` : `${relativeScore}`;
-    if (relativeScore === 0) displayRel = "E";
+    // Calculate Current Hole Best (for display)
+    const currentHoleNum = COURSE_DATA[currentHoleIndex].hole;
+    const currentMemberScores = team.members.map(m => scores[m]?.[currentHoleNum] || COURSE_DATA[currentHoleIndex].par);
+    currentHoleScore = Math.min(...currentMemberScores);
 
-    return { 
-      mainScore: totalStrokes, 
-      subScore: `(${displayRel})`, 
-      relativeScore 
-    };
+    const rel = teamTotal - teamPar;
+    const displayRel = rel > 0 ? `+${rel}` : rel === 0 ? "E" : `${rel}`;
+
+    return { teamTotal, displayRel, rel, currentHoleScore };
   };
 
-  // 2. MATCH PLAY (Skins / Carry-over)
-  // Logic: Iterate through all completed holes. 
-  // If a player has the UNIQUE lowest score, they win the "Pot".
-  // If tied for lowest, "Pot" increases for next hole.
+  // 3. MATCH PLAY (Skins Logic)
   const calculateMatchStandings = () => {
+    if (gameMode !== 'Match Play') return { points: {}, currentPot: 0 };
+    
     const points: Record<string, number> = {};
     players.forEach(p => points[p] = 0);
-    
     let currentPot = 1;
 
-    // Loop through all holes up to current
-    COURSE_DATA.forEach((h, index) => {
-      // Stop if we haven't played this hole yet (unless we are on it right now, check if scores exist)
-      // Actually, only calc completed holes or current if scores entered?
-      // Let's calc for ALL holes that have scores for everyone.
-      
-      const holeScores = players.map(p => ({ 
-        name: p, 
-        score: scores[p]?.[h.hole] || 0 
-      }));
+    COURSE_DATA.forEach((h) => {
+      const holeScores = players.map(p => ({ name: p, score: scores[p]?.[h.hole] || 0 }));
+      if (holeScores.some(x => x.score === 0)) return; // Hole not finished by all
 
-      // If anyone has a 0 (unplayed), stop calculating
-      if (holeScores.some(x => x.score === 0)) return;
-
-      // Find lowest score
       const minScore = Math.min(...holeScores.map(x => x.score));
-      
-      // Who got that score?
       const winners = holeScores.filter(x => x.score === minScore);
 
       if (winners.length === 1) {
-        // ONE WINNER -> They take the pot
         points[winners[0].name] += currentPot;
-        currentPot = 1; // Reset pot
+        currentPot = 1; 
       } else {
-        // TIE -> Pot carries over
         currentPot += 1;
       }
     });
-
     return { points, currentPot };
   };
-
   const matchStandings = calculateMatchStandings();
-
-  // --- WRAPPER TO GET STATS BASED ON MODE ---
-  const getPlayerDisplayStats = (player: string) => {
-    if (gameMode === 'Stroke Play') {
-      return getStrokeStats(player);
-    } else {
-      // Match Play
-      const pts = matchStandings.points[player] || 0;
-      return {
-        mainScore: pts,
-        subScore: "Points",
-        relativeScore: -pts // Invert for color logic (Higher points = Green/Good)
-      };
-    }
-  };
 
 
   // --- ACTIONS ---
-  const addPlayerFromList = () => {
+
+  const addTeam = () => {
+    const size = gameMode.includes('Doubles') ? 2 : 3;
+    const teamName = prompt(`Enter Team Name (e.g. 'Team Alpha'):`);
+    if (!teamName) return;
+
+    // Helper to get member names
+    const newMembers = [];
+    for(let i=0; i<size; i++) {
+       // Ideally this would be a UI modal, but prompt works for MVP
+       // We can just type names or use the logic below to pick from dropdown later
+       // For now, let's keep it simple: Just type names or pick "Guest 1"
+       const mName = prompt(`Enter Player ${i+1} Name for ${teamName}:`);
+       if(mName) newMembers.push(mName);
+       else newMembers.push(`${teamName} P${i+1}`);
+    }
+
+    setTeams([...teams, { name: teamName, members: newMembers }]);
+    
+    // Initialize scores for these new members
+    const newScores = { ...scores };
+    newMembers.forEach(m => newScores[m] = {});
+    setScores(newScores);
+  };
+
+  const removeTeam = (index: number) => {
+    setTeams(teams.filter((_, i) => i !== index));
+  };
+
+  const addSoloPlayer = () => {
     if (!selectedUserToAdd) return;
     if (!players.includes(selectedUserToAdd)) {
       setPlayers([...players, selectedUserToAdd]);
@@ -151,28 +179,20 @@ export default function Play() {
     }
   };
 
-  const addManualPlayer = () => {
-    const name = prompt("Enter Guest Name:");
-    if (name && !players.includes(name)) {
-      setPlayers([...players, name]);
-    }
-  };
-
-  const removePlayer = (indexToRemove: number) => {
-    setPlayers(players.filter((_, i) => i !== indexToRemove));
+  const addManualSolo = () => {
+    const name = prompt("Guest Name:");
+    if (name && !players.includes(name)) setPlayers([...players, name]);
   };
 
   const startGame = () => {
-    if (players.length === 0) return alert("Add at least one player!");
-    const initialScores: any = {};
-    players.forEach(p => initialScores[p] = {});
-    setScores(initialScores);
+    if (isTeamMode && teams.length < 2) return alert("You need at least 2 teams for a game!");
+    if (!isTeamMode && players.length < 1) return alert("Add at least one player!");
     setStep(2);
   };
 
   const updateScore = (player: string, change: number) => {
     const currentHoleNum = COURSE_DATA[currentHoleIndex].hole;
-    const currentScore = scores[player][currentHoleNum] || COURSE_DATA[currentHoleIndex].par;
+    const currentScore = scores[player]?.[currentHoleNum] || COURSE_DATA[currentHoleIndex].par;
     
     setScores({
       ...scores,
@@ -183,122 +203,146 @@ export default function Play() {
     });
   };
 
-  const nextHole = () => {
-    if (currentHoleIndex < COURSE_DATA.length - 1) {
-      setCurrentHoleIndex(currentHoleIndex + 1);
-    } else {
-      finishRound();
-    }
-  };
-
-  const prevHole = () => {
-    if (currentHoleIndex > 0) setCurrentHoleIndex(currentHoleIndex - 1);
-  };
-
   const finishRound = async () => {
     if(!confirm("Finish round and submit scores?")) return;
     setSaving(true);
 
-    for (const player of players) {
-      const playerScores = scores[player];
-      let total = 0;
-      Object.values(playerScores).forEach(s => total += s);
+    // Prepare data to save
+    const dataToInsert = [];
 
-      const dataToSave: any = {
-        player_name: player,
-        tee_color: selectedTee,
-        total_score: total, // We still save strokes for history
-        game_mode: gameMode, // <--- NEW FIELD
-        created_by_user: user.email 
-      };
+    if (isTeamMode) {
+      // Save 1 Scorecard PER TEAM
+      for (const team of teams) {
+        const { teamTotal } = getTeamStats(team);
+        
+        const row: any = {
+          player_name: team.name, // The Team Name goes on the leaderboard
+          tee_color: selectedTee,
+          total_score: teamTotal,
+          game_mode: gameMode,
+          created_by_user: user.email 
+        };
 
-      COURSE_DATA.forEach(h => {
-        dataToSave[`hole_${h.hole}`] = playerScores[h.hole] || h.par;
-      });
-
-      await supabase.from('scorecards').insert(dataToSave);
+        // Fill in individual hole scores (Best Ball)
+        COURSE_DATA.forEach(h => {
+          const memberScores = team.members.map(m => scores[m]?.[h.hole] || h.par);
+          row[`hole_${h.hole}`] = Math.min(...memberScores);
+        });
+        
+        dataToInsert.push(row);
+      }
+    } else {
+      // Save Individual Scorecards
+      for (const player of players) {
+         const { total } = getIndividualStats(player);
+         const row: any = {
+            player_name: player,
+            tee_color: selectedTee,
+            total_score: total,
+            game_mode: gameMode,
+            created_by_user: user.email 
+         };
+         COURSE_DATA.forEach(h => {
+            row[`hole_${h.hole}`] = scores[player]?.[h.hole] || h.par;
+         });
+         dataToInsert.push(row);
+      }
     }
+
+    const { error } = await supabase.from('scorecards').insert(dataToInsert);
+    if(error) alert("Error saving: " + error.message);
 
     setSaving(false);
     setStep(3);
   };
 
-  // --- USER BADGE ---
-  const UserBadge = () => (
-    <div className="absolute top-4 right-4 bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/20 shadow-lg z-50 flex items-center gap-2">
-      <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
-      <span className="text-xs text-white font-medium tracking-wide">
-        {players[0] || 'Me'}
-      </span>
-    </div>
-  );
+  const nextHole = () => currentHoleIndex < COURSE_DATA.length - 1 ? setCurrentHoleIndex(currentHoleIndex + 1) : finishRound();
+  const prevHole = () => currentHoleIndex > 0 && setCurrentHoleIndex(currentHoleIndex - 1);
 
   if (loadingUser) return <div className="min-h-screen bg-green-900 flex items-center justify-center text-white font-bold">Loading...</div>;
 
   // --- VIEW 1: SETUP ---
   if (step === 1) {
     const availableToAdd = registeredUsers.filter(u => {
-      const displayName = u.first_name || u.email.split('@')[0];
-      return !players.includes(displayName);
+      const name = u.first_name || u.email.split('@')[0];
+      return !players.includes(name);
     });
 
     return (
       <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center relative">
-        <UserBadge /> 
-        <Image src="/logo.png" width={120} height={120} alt="Logo" className="mb-4 rounded-full shadow-lg" />
-        <h1 className="text-3xl font-bold mb-6">New Round Setup</h1>
+        <Image src="/logo.png" width={100} height={100} alt="Logo" className="mb-4 rounded-full shadow-lg" />
+        <h1 className="text-2xl font-bold mb-4">Round Setup</h1>
         
         <div className="w-full max-w-md bg-white rounded-xl p-6 text-gray-800 shadow-2xl">
-          
-          {/* GAME MODE SELECTOR */}
+          {/* MODE SELECTOR */}
           <label className="block font-bold mb-2">Game Mode</label>
-          <div className="flex gap-2 mb-6">
+          <div className="grid grid-cols-2 gap-2 mb-4">
             {MODES.map(m => (
-              <button 
-                key={m} 
-                onClick={() => setGameMode(m)} 
-                className={`flex-1 py-3 rounded-lg font-bold border-2 ${gameMode === m ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-400'}`}
-              >
-                {m}
-              </button>
+              <button key={m} onClick={() => setGameMode(m)} className={`py-2 px-1 text-sm rounded border-2 font-bold ${gameMode === m ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50'}`}>{m}</button>
             ))}
           </div>
-          {gameMode === 'Match Play' && (
-            <p className="text-sm text-gray-500 mb-6 italic bg-blue-50 p-2 rounded border border-blue-100">
-              ℹ️ <strong>Rules:</strong> Lowest score wins the hole. Ties carry over to the next hole (Skins).
-            </p>
-          )}
 
           <label className="block font-bold mb-2">Select Tees</label>
-          <div className="flex gap-2 mb-6">
-            {TEES.map(tee => (
-              <button key={tee} onClick={() => setSelectedTee(tee)} className={`flex-1 py-3 rounded-lg font-bold border-2 ${selectedTee === tee ? 'bg-green-600 text-white border-green-600' : 'bg-gray-50'}`}>{tee}</button>
-            ))}
-          </div>
-
-          <label className="block font-bold mb-2">Current Players</label>
-          <div className="bg-gray-50 rounded-lg p-2 mb-4 space-y-2">
-            {players.map((p, i) => (
-              <div key={i} className="flex justify-between items-center bg-white p-3 rounded shadow-sm border border-gray-100">
-                <span className="font-bold text-lg">{p}</span>
-                {i > 0 && <button onClick={() => removePlayer(i)} className="text-red-500 text-sm font-bold">Remove</button>}
-              </div>
-            ))}
-          </div>
-
-          <label className="block font-bold mb-2">Add From Directory</label>
           <div className="flex gap-2 mb-4">
-            <select className="flex-1 p-3 border-2 rounded-lg bg-white" value={selectedUserToAdd} onChange={(e) => setSelectedUserToAdd(e.target.value)}>
-              <option value="">-- Select a User --</option>
-              {availableToAdd.map((u: any) => {
-                 const name = u.first_name || u.email.split('@')[0];
-                 return <option key={u.email} value={name}>{name}</option>
-              })}
-            </select>
-            <button onClick={addPlayerFromList} disabled={!selectedUserToAdd} className="bg-green-600 text-white px-4 rounded-lg font-bold">Add</button>
+            {TEES.map(tee => (
+              <button key={tee} onClick={() => setSelectedTee(tee)} className={`flex-1 py-2 rounded border-2 font-bold ${selectedTee === tee ? 'bg-green-600 text-white border-green-600' : 'bg-gray-50'}`}>{tee}</button>
+            ))}
           </div>
 
-          <button onClick={startGame} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl text-xl shadow-lg mt-4">Start Game</button>
+          {/* DYNAMIC PLAYER/TEAM SETUP */}
+          <div className="mb-6">
+             <div className="flex justify-between items-center mb-2">
+                <label className="font-bold">{isTeamMode ? "Teams" : "Players"}</label>
+                {isTeamMode ? (
+                   <button onClick={addTeam} className="bg-green-600 text-white text-xs px-2 py-1 rounded hover:bg-green-700">+ Add Team</button>
+                ) : (
+                   <div className="flex gap-1">
+                      <button onClick={addManualSolo} className="bg-gray-200 text-gray-700 text-xs px-2 py-1 rounded">Manual</button>
+                   </div>
+                )}
+             </div>
+
+             {/* SOLO LIST */}
+             {!isTeamMode && (
+                <>
+                  <div className="flex gap-2 mb-2">
+                     <select className="flex-1 p-2 border rounded" value={selectedUserToAdd} onChange={(e) => setSelectedUserToAdd(e.target.value)}>
+                        <option value="">Select User...</option>
+                        {availableToAdd.map((u: any) => {
+                           const n = u.first_name || u.email.split('@')[0];
+                           return <option key={u.email} value={n}>{n}</option>
+                        })}
+                     </select>
+                     <button onClick={addSoloPlayer} className="bg-green-600 text-white px-3 rounded font-bold">Add</button>
+                  </div>
+                  <div className="space-y-2">
+                     {players.map((p, i) => (
+                        <div key={i} className="flex justify-between bg-gray-50 p-2 rounded border">{p} <button onClick={() => setPlayers(players.filter((_,x) => x!==i))} className="text-red-500 font-bold">x</button></div>
+                     ))}
+                  </div>
+                </>
+             )}
+
+             {/* TEAM LIST */}
+             {isTeamMode && (
+                <div className="space-y-3">
+                   {teams.map((t, i) => (
+                      <div key={i} className="bg-blue-50 p-3 rounded border border-blue-200">
+                         <div className="flex justify-between font-bold text-blue-800 border-b border-blue-200 pb-1 mb-2">
+                            <span>{t.name}</span>
+                            <button onClick={() => removeTeam(i)} className="text-red-500 text-xs">Remove</button>
+                         </div>
+                         <div className="text-sm text-gray-600">
+                            {t.members.join(', ')}
+                         </div>
+                      </div>
+                   ))}
+                   {teams.length === 0 && <div className="text-gray-400 italic text-sm text-center">No teams added yet.</div>}
+                </div>
+             )}
+          </div>
+
+          <button onClick={startGame} className="w-full bg-green-600 text-white font-bold py-3 rounded-lg text-xl shadow-lg">Start Game</button>
         </div>
       </div>
     );
@@ -307,28 +351,41 @@ export default function Play() {
   // --- VIEW 3: SUMMARY ---
   if (step === 3) {
     return (
-      <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center justify-center relative">
-        <UserBadge /> 
-        <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-8 text-center text-gray-800">
-          <div className="text-6xl mb-4">🎉</div>
-          <h1 className="text-3xl font-bold mb-2 text-green-800">Round Complete!</h1>
-          <p className="text-gray-500 mb-6">Mode: {gameMode}</p>
-          <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
-            {players.map(player => {
-              const stats = getPlayerDisplayStats(player);
-              return (
-                <div key={player} className="flex justify-between items-center border-b border-gray-200 last:border-0 py-3">
-                  <span className="font-bold text-lg">{player}</span>
-                  <div className="text-right">
-                    <span className="block font-bold text-2xl text-green-700">{stats.mainScore}</span>
-                    <span className="text-sm text-gray-400">{gameMode === 'Match Play' ? 'Points Won' : stats.subScore}</span>
-                  </div>
-                </div>
-              )
-            })}
+      <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center justify-center">
+        <div className="bg-white rounded-xl shadow-2xl p-8 text-center text-gray-800 w-full max-w-md">
+          <h1 className="text-3xl font-bold text-green-800 mb-2">Round Complete!</h1>
+          <p className="text-gray-500 mb-4">{gameMode}</p>
+          
+          <div className="bg-gray-50 rounded-lg p-4 mb-4 text-left">
+            {isTeamMode ? (
+               // TEAM SUMMARY
+               teams.map((t, i) => {
+                  const { teamTotal, displayRel } = getTeamStats(t);
+                  return (
+                    <div key={i} className="flex justify-between border-b py-2">
+                       <span className="font-bold">{t.name}</span>
+                       <span className="font-bold text-green-700">{teamTotal} ({displayRel})</span>
+                    </div>
+                  )
+               })
+            ) : (
+               // SOLO SUMMARY
+               players.map(p => {
+                  const stats = gameMode === 'Match Play' 
+                     ? { main: matchStandings.points[p], sub: 'Pts' }
+                     : { main: getIndividualStats(p).total, sub: getIndividualStats(p).displayRel };
+                  
+                  return (
+                     <div key={p} className="flex justify-between border-b py-2">
+                        <span className="font-bold">{p}</span>
+                        <span className="font-bold text-green-700">{stats.main} <span className="text-xs text-gray-400">({stats.sub})</span></span>
+                     </div>
+                  )
+               })
+            )}
           </div>
-          <Link href="/leaderboard"><button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl text-xl shadow-lg mb-3">View Leaderboard</button></Link>
-          <Link href="/"><button className="text-gray-400 hover:text-gray-600 font-bold text-sm">Back to Home</button></Link>
+          <Link href="/leaderboard"><button className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg mb-2">Leaderboard</button></Link>
+          <Link href="/"><button className="text-gray-400 font-bold text-sm">Home</button></Link>
         </div>
       </div>
     );
@@ -341,98 +398,102 @@ export default function Play() {
   const distBlue = currentHole.distances?.blue || 0;
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-4 flex flex-col relative">
-      <UserBadge /> 
-      
-      <div className="bg-green-800 p-4 rounded-xl mb-4 shadow-lg border border-green-700 mt-8"> 
-        {/* HEADER */}
-        <div className="flex items-center gap-4 mb-4">
-          <div className="bg-white p-1 rounded-full shadow-md">
-            <Image src="/logo.png" width={60} height={60} alt="Logo" className="rounded-full" />
-          </div>
-          <div>
-             <h2 className="text-4xl font-black uppercase tracking-tight">Hole {currentHole.hole}</h2>
-             <div className="text-green-200 font-bold text-xl">Par {currentHole.par}</div>
-          </div>
+    <div className="min-h-screen bg-gray-900 text-white p-4 flex flex-col">
+       {/* HEADER */}
+       <div className="bg-green-800 p-4 rounded-xl mb-4 shadow-lg border border-green-700 mt-2"> 
+        <div className="flex items-center gap-4 mb-2">
+           <h2 className="text-3xl font-black uppercase">Hole {currentHole.hole}</h2>
+           <div className="text-green-200 font-bold text-xl">Par {currentHole.par}</div>
         </div>
 
-        {/* MATCH PLAY POT INDICATOR */}
+        {/* MATCH PLAY POT */}
         {gameMode === 'Match Play' && (
-           <div className="bg-yellow-500 text-black font-bold p-2 rounded-lg text-center mb-4 shadow-md">
-              <span className="text-sm uppercase tracking-wide">Hole Value (Pot)</span>
-              <div className="text-2xl">{matchStandings.currentPot} Points</div>
-              <div className="text-xs font-normal">Ties carry over to next hole!</div>
+           <div className="bg-yellow-500 text-black font-bold p-1 rounded text-center mb-2 text-sm">
+              Pot: {matchStandings.currentPot} (Skins)
            </div>
         )}
 
-        <div className="flex gap-2 mb-4">
-          <div className="flex-1 bg-red-700 rounded-lg p-2 text-center border border-red-500 shadow-sm">
-             <div className="text-xs uppercase font-bold text-red-200">Red</div>
-             <div className="text-lg font-black">{distRed}</div>
-          </div>
-          <div className="flex-1 bg-gray-100 rounded-lg p-2 text-center border border-gray-300 shadow-sm">
-             <div className="text-xs uppercase font-bold text-gray-500">White</div>
-             <div className="text-lg font-black text-gray-800">{distWhite}</div>
-          </div>
-          <div className="flex-1 bg-blue-700 rounded-lg p-2 text-center border border-blue-500 shadow-sm">
-             <div className="text-xs uppercase font-bold text-blue-200">Blue</div>
-             <div className="text-lg font-black">{distBlue}</div>
-          </div>
+        {/* DISTANCES */}
+        <div className="flex gap-1 mb-2 text-center text-xs font-bold">
+           <div className="flex-1 bg-red-700 p-1 rounded border-red-500">Red: {distRed}</div>
+           <div className="flex-1 bg-gray-100 text-gray-800 p-1 rounded border-gray-300">White: {distWhite}</div>
+           <div className="flex-1 bg-blue-700 p-1 rounded border-blue-500">Blue: {distBlue}</div>
         </div>
-        <div className="bg-green-900/50 p-4 rounded-lg border border-green-600">
-           <p className="text-xl font-medium leading-relaxed text-white">{currentHole.info}</p>
-        </div>
+        <p className="text-sm italic text-green-200">{currentHole.info}</p>
       </div>
 
-      <div className="mb-4 w-full h-64 md:h-80 bg-gray-800 rounded-xl overflow-hidden relative shadow-2xl border-2 border-gray-700">
+      {/* MAP */}
+      <div className="mb-4 w-full h-48 bg-gray-800 rounded-xl overflow-hidden relative border border-gray-700">
         {currentHole.image ? (
-          <Image src={currentHole.image} alt={`Map of Hole ${currentHole.hole}`} fill className="object-cover" />
-        ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center text-gray-500"><span className="font-bold">No Map Image</span></div>
-        )}
+          <Image src={currentHole.image} alt="Map" fill className="object-cover" />
+        ) : <div className="flex items-center justify-center h-full text-gray-500 font-bold">No Map</div>}
       </div>
 
-      <div className="flex-1 overflow-y-auto space-y-3 pb-4">
-        {players.map(player => {
-          const s = scores[player][currentHole.hole] || currentHole.par;
-          
-          // DYNAMIC STATS (Stroke or Match)
-          const stats = getPlayerDisplayStats(player);
-          
-          let scoreColor = "text-gray-500";
-          if (stats.relativeScore < 0) scoreColor = "text-green-600"; // Good
-          if (stats.relativeScore > 0) scoreColor = "text-red-500";   // Bad (or low points)
+      {/* SCORING LIST */}
+      <div className="flex-1 overflow-y-auto space-y-4 pb-4">
+        
+        {/* TEAM MODE RENDER */}
+        {isTeamMode ? (
+           teams.map((team, idx) => {
+              const { currentHoleScore, displayRel, teamTotal } = getTeamStats(team);
+              return (
+                 <div key={idx} className="bg-white rounded-xl overflow-hidden shadow-md text-gray-800 border-l-8 border-blue-600">
+                    {/* TEAM HEADER */}
+                    <div className="bg-gray-100 p-2 flex justify-between items-center border-b">
+                       <span className="font-bold text-lg text-blue-900">{team.name}</span>
+                       <div className="text-right">
+                          <span className="block font-black text-2xl leading-none">{currentHoleScore}</span>
+                          <span className="text-xs text-gray-500">Hole Score (Best Ball)</span>
+                       </div>
+                    </div>
+                    {/* MEMBERS INPUT */}
+                    <div className="p-2 space-y-2">
+                       {team.members.map(member => (
+                          <div key={member} className="flex justify-between items-center">
+                             <span className="text-sm font-medium w-24 truncate">{member}</span>
+                             <div className="flex items-center gap-2">
+                                <button onClick={() => updateScore(member, -1)} className="w-8 h-8 bg-red-100 text-red-600 rounded-full font-bold">-</button>
+                                <span className="font-bold w-6 text-center">{scores[member]?.[currentHole.hole] || currentHole.par}</span>
+                                <button onClick={() => updateScore(member, 1)} className="w-8 h-8 bg-green-100 text-green-600 rounded-full font-bold">+</button>
+                             </div>
+                          </div>
+                       ))}
+                    </div>
+                    <div className="bg-blue-50 px-2 py-1 text-xs text-right text-blue-800 font-bold">
+                       Total: {displayRel} ({teamTotal})
+                    </div>
+                 </div>
+              )
+           })
+        ) : (
+           // SOLO MODE RENDER
+           players.map(player => {
+             const s = scores[player][currentHole.hole] || currentHole.par;
+             const stats = gameMode === 'Match Play' 
+                ? { main: matchStandings.points[player], label: 'Pts' }
+                : { main: getIndividualStats(player).displayRel, label: 'Tot' };
 
-          return (
-            <div key={player} className="bg-white rounded-xl p-3 flex flex-col text-gray-800 shadow-md">
-              <div className="flex justify-between items-center mb-2 border-b border-gray-100 pb-2">
-                <span className="font-bold text-xl truncate max-w-[50%]">{player}</span>
-                <div className="flex items-center gap-2 bg-gray-100 px-3 py-1 rounded-lg">
-                   {/* In Match Play, this shows Points */}
-                   <span className={`font-black ${scoreColor} text-lg`}>{stats.mainScore}</span>
-                   <span className="text-gray-500 text-sm font-bold">{stats.subScore}</span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Strokes</span>
-                <div className="flex items-center gap-4">
-                  <button onClick={() => updateScore(player, -1)} className="w-12 h-12 bg-red-100 text-red-600 rounded-full text-2xl font-bold flex items-center justify-center pb-1 shadow-sm border border-red-200">-</button>
-                  <span className="text-4xl font-black w-12 text-center text-gray-800">{s}</span>
-                  <button onClick={() => updateScore(player, 1)} className="w-12 h-12 bg-green-100 text-green-600 rounded-full text-2xl font-bold flex items-center justify-center pb-1 shadow-sm border border-green-200">+</button>
-                </div>
-              </div>
-            </div>
-          )
-        })}
+             return (
+               <div key={player} className="bg-white rounded-xl p-3 flex justify-between items-center text-gray-800 shadow-md">
+                 <div>
+                    <div className="font-bold text-lg">{player}</div>
+                    <div className="text-xs text-gray-500 font-bold">{stats.label}: {stats.main}</div>
+                 </div>
+                 <div className="flex items-center gap-3">
+                   <button onClick={() => updateScore(player, -1)} className="w-10 h-10 bg-red-100 text-red-600 rounded-full text-xl font-bold">-</button>
+                   <span className="text-3xl font-black w-8 text-center">{s}</span>
+                   <button onClick={() => updateScore(player, 1)} className="w-10 h-10 bg-green-100 text-green-600 rounded-full text-xl font-bold">+</button>
+                 </div>
+               </div>
+             )
+           })
+        )}
+
       </div>
 
       <div className="mt-auto pt-2 flex gap-3">
-        {currentHoleIndex > 0 && (
-          <button onClick={prevHole} className="flex-1 bg-gray-700 text-white font-bold py-4 rounded-xl text-lg shadow-lg">&lt; Prev</button>
-        )}
-        <button onClick={nextHole} disabled={saving} className="flex-[2] bg-blue-600 text-white font-bold py-4 rounded-xl text-lg shadow-lg">
-          {saving ? 'Saving...' : (currentHoleIndex < COURSE_DATA.length - 1 ? 'Next Hole >' : 'Finish Round')}
-        </button>
+        {currentHoleIndex > 0 && <button onClick={prevHole} className="flex-1 bg-gray-700 text-white font-bold py-4 rounded-xl shadow-lg">&lt;</button>}
+        <button onClick={nextHole} disabled={saving} className="flex-[3] bg-blue-600 text-white font-bold py-4 rounded-xl shadow-lg">{saving ? 'Saving...' : (currentHoleIndex < 17 ? 'Next >' : 'Finish')}</button>
       </div>
     </div>
   );
