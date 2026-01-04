@@ -30,7 +30,7 @@ export default function Profile() {
     }
     setUser(user);
 
-    // Fetch Profile Info using the ID column (the primary key)
+    // Fetch Profile Info using the unique ID 🔑
     const { data, error } = await supabase
       .from('profiles')
       .select('first_name, last_name, avatar_url')
@@ -43,7 +43,7 @@ export default function Profile() {
       setAvatarUrl(data.avatar_url || '');
     }
 
-    // Fetch Stats (Rounds count, etc.)
+    // Fetch Stats based on player name or email prefix
     const { data: rounds } = await supabase
       .from('scorecards')
       .select('total_score')
@@ -59,7 +59,6 @@ export default function Profile() {
     setLoading(false);
   }
 
-  // Helper to Capitalize First Letter
   const handleNameChange = (val: string, setter: any) => {
     if (!val) { setter(''); return; }
     const formatted = val.charAt(0).toUpperCase() + val.slice(1);
@@ -69,7 +68,7 @@ export default function Profile() {
   async function updateProfile() {
     setLoading(true);
     try {
-      // Using upsert with the ID ensures we create OR update the correct row
+      // Upsert ensures we create or update the record correctly using the ID 🆔
       const { error } = await supabase
         .from('profiles')
         .upsert({
@@ -103,17 +102,21 @@ export default function Profile() {
       const fileName = `${user.id}-${Math.random()}.${fileExt}`;
       const filePath = `${fileName}`;
 
+      // 1. Upload the file to the 'avatars' bucket 📤
       let { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(filePath, file);
 
       if (uploadError) throw uploadError;
 
+      // 2. Retrieve the actual web link (Public URL) 🔗
       const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      
+      // 3. Update the state so the image displays and is ready to save to the DB 🖼️
       setAvatarUrl(data.publicUrl);
       
     } catch (error: any) {
-      alert(error.message);
+      alert("Upload error: " + error.message);
     } finally {
       setUploading(false);
     }
@@ -127,6 +130,7 @@ export default function Profile() {
       
       <div className="w-full max-w-md bg-white text-gray-800 rounded-xl p-6 shadow-2xl">
         
+        {/* Avatar Section */}
         <div className="flex flex-col items-center mb-6">
           <div className="relative w-24 h-24 mb-4">
             {avatarUrl ? (
@@ -135,6 +139,7 @@ export default function Profile() {
                 alt="Avatar" 
                 fill 
                 className="rounded-full object-cover border-4 border-green-600 shadow-md"
+                unoptimized // Use this if Next.js has trouble optimizing external Supabase URLs
               />
             ) : (
               <div className="w-full h-full bg-gray-200 rounded-full flex items-center justify-center text-gray-400 font-bold border-4 border-gray-100">
@@ -155,6 +160,7 @@ export default function Profile() {
           </p>
         </div>
 
+        {/* Input Fields */}
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">First Name</label>
@@ -178,6 +184,7 @@ export default function Profile() {
           </div>
         </div>
 
+        {/* Player Stats */}
         <div className="bg-gray-50 rounded-lg p-4 mb-6 flex justify-between text-center border border-gray-100">
            <div>
               <div className="text-xl font-black text-gray-800">{stats.rounds}</div>
