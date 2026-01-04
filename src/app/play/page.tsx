@@ -250,7 +250,6 @@ export default function Play() {
       {/* PLAYERS LIST */}
       <div className="flex-1 overflow-y-auto space-y-3 pb-4">
         {players.map(player => {
-          // Determine standard par based on selected tee? Usually par is same, but just in case
           const s = scores[player][currentHole.hole] || currentHole.par;
           const { totalStrokes, displayRel, relativeScore } = getPlayerTotals(player);
           let scoreColor = "text-gray-500";
