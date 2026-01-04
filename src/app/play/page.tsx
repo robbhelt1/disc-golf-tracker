@@ -4,7 +4,7 @@ import { supabase } from '@/supabase';
 import { useRouter } from 'next/navigation';
 import { COURSE_DATA, TEES } from '@/courseData';
 import Link from 'next/link';
-import Image from 'next/image'; // <--- New Import
+import Image from 'next/image';
 
 export default function Play() {
   const router = useRouter();
@@ -130,6 +130,7 @@ export default function Play() {
   if (step === 1) {
     return (
       <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center">
+        <Image src="/logo.png" width={120} height={120} alt="Logo" className="mb-4 rounded-full shadow-lg" />
         <h1 className="text-3xl font-bold mb-8">New Round Setup</h1>
         <div className="w-full max-w-md bg-white rounded-xl p-6 text-gray-800 shadow-2xl">
           <label className="block font-bold mb-2">Select Tees</label>
@@ -178,24 +179,40 @@ export default function Play() {
     );
   }
 
-  // --- VIEW 2: PLAYING (UPDATED WITH IMAGE) ---
+  // --- VIEW 2: PLAYING (REDESIGNED) ---
   const currentHole = COURSE_DATA[currentHoleIndex];
   return (
     <div className="min-h-screen bg-gray-900 text-white p-4 flex flex-col">
-      {/* HOLE HEADER */}
-      <div className="bg-green-800 p-4 rounded-xl mb-3 text-center shadow-lg border border-green-700">
-        <div className="flex justify-between items-end mb-2">
-          <h2 className="text-4xl font-bold text-white">Hole {currentHole.hole}</h2>
-          <div className="text-right">
-            <div className="text-2xl font-bold text-green-200">Par {currentHole.par}</div>
-            <div className="text-sm text-green-300">{currentHole.distance} ft</div>
+      
+      {/* HEADER SECTION */}
+      <div className="bg-green-800 p-4 rounded-xl mb-4 shadow-lg border border-green-700">
+        
+        {/* Row 1: Logo & Hole Number */}
+        <div className="flex items-center gap-4 mb-4">
+          <div className="bg-white p-1 rounded-full shadow-md">
+            <Image src="/logo.png" width={60} height={60} alt="Logo" className="rounded-full" />
+          </div>
+          <div>
+             <h2 className="text-4xl font-black uppercase tracking-tight">Hole {currentHole.hole}</h2>
+             <div className="flex gap-4 text-green-200 font-bold text-lg">
+                <span>Par {currentHole.par}</span>
+                <span>•</span>
+                <span>{currentHole.distance} ft</span>
+             </div>
           </div>
         </div>
-        <p className="text-sm text-green-200 italic border-t border-green-700 pt-2">{currentHole.info}</p>
+
+        {/* Row 2: The Big Info Text (No longer tiny/italic) */}
+        <div className="bg-green-900/50 p-4 rounded-lg border border-green-600">
+           <p className="text-xl font-medium leading-relaxed text-white">
+             {currentHole.info}
+           </p>
+        </div>
       </div>
 
-      {/* --- NEW: HOLE IMAGE AREA --- */}
-      <div className="mb-4 w-full h-48 bg-gray-800 rounded-xl overflow-hidden relative shadow-inner border border-gray-700">
+      {/* MAP IMAGE AREA (Taller now!) */}
+      {/* We use h-64 (256px) or h-72 depending on screen size to really use the space */}
+      <div className="mb-4 w-full h-64 md:h-80 bg-gray-800 rounded-xl overflow-hidden relative shadow-2xl border-2 border-gray-700">
         {currentHole.image ? (
           <Image 
             src={currentHole.image} 
@@ -204,8 +221,9 @@ export default function Play() {
             className="object-cover"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-gray-600 font-bold">
-            No Map Available
+          <div className="w-full h-full flex flex-col items-center justify-center text-gray-500">
+             <span className="text-4xl mb-2">🗺️</span>
+             <span className="font-bold">No Map Image</span>
           </div>
         )}
       </div>
@@ -222,18 +240,18 @@ export default function Play() {
           return (
             <div key={player} className="bg-white rounded-xl p-3 flex flex-col text-gray-800 shadow-md">
               <div className="flex justify-between items-center mb-2 border-b border-gray-100 pb-2">
-                <span className="font-bold text-lg truncate max-w-[50%]">{player}</span>
-                <div className="flex items-center gap-2 bg-gray-50 px-2 py-1 rounded-lg">
-                   <span className={`font-bold ${scoreColor} text-base`}>{displayRel}</span>
-                   <span className="text-gray-400 text-xs font-semibold">({totalStrokes})</span>
+                <span className="font-bold text-xl truncate max-w-[50%]">{player}</span>
+                <div className="flex items-center gap-2 bg-gray-100 px-3 py-1 rounded-lg">
+                   <span className={`font-black ${scoreColor} text-lg`}>{displayRel}</span>
+                   <span className="text-gray-500 text-sm font-bold">({totalStrokes})</span>
                 </div>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Strokes</span>
                 <div className="flex items-center gap-4">
-                  <button onClick={() => updateScore(player, -1)} className="w-10 h-10 bg-red-100 text-red-600 rounded-full text-xl font-bold flex items-center justify-center pb-1">-</button>
-                  <span className="text-3xl font-bold w-8 text-center text-gray-800">{s}</span>
-                  <button onClick={() => updateScore(player, 1)} className="w-10 h-10 bg-green-100 text-green-600 rounded-full text-xl font-bold flex items-center justify-center pb-1">+</button>
+                  <button onClick={() => updateScore(player, -1)} className="w-12 h-12 bg-red-100 text-red-600 rounded-full text-2xl font-bold flex items-center justify-center pb-1 shadow-sm border border-red-200">-</button>
+                  <span className="text-4xl font-black w-12 text-center text-gray-800">{s}</span>
+                  <button onClick={() => updateScore(player, 1)} className="w-12 h-12 bg-green-100 text-green-600 rounded-full text-2xl font-bold flex items-center justify-center pb-1 shadow-sm border border-green-200">+</button>
                 </div>
               </div>
             </div>
