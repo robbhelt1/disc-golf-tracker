@@ -11,11 +11,15 @@ export default function Play() {
   const [user, setUser] = useState<any>(null);
   const [loadingUser, setLoadingUser] = useState(true);
 
-  // --- NEW: USER DIRECTORY STATE ---
+  // --- USER DIRECTORY STATE ---
   const [registeredUsers, setRegisteredUsers] = useState<any[]>([]);
   const [selectedUserToAdd, setSelectedUserToAdd] = useState('');
+  // We now store players as OBJECTS: { name: "Robb", email: "..." }
+  // But to keep your scoring logic simple for now, we will still just use names in the 'players' array
+  // and map them smartly.
+  const [players, setPlayers] = useState<string[]>([]); 
 
-  // --- SECURITY CHECK & DATA FETCH ---
+  // --- INIT ---
   useEffect(() => {
     async function init() {
       // 1. Check Auth
@@ -27,19 +31,19 @@ export default function Play() {
       setUser(user);
       setLoadingUser(false);
 
-      // 2. Fetch All Registered Users
+      // 2. Fetch User Directory (Now getting first_name too)
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('email, username')
-        .neq('email', user.email); // Don't show myself in the dropdown
+        .select('email, first_name')
+        .neq('email', user.email); 
       
-      if (profiles) {
-        setRegisteredUsers(profiles);
-      }
+      if (profiles) setRegisteredUsers(profiles);
       
-      // Auto-add the logged-in user as Player 1
-      const myName = user.email?.split('@')[0] || 'Me';
-      // Only set players if empty (prevents reset on re-render)
+      // Auto-add MYSELF (using my first_name if available)
+      // We check the profiles table for *my* name, or use metadata
+      const { data: myProfile } = await supabase.from('profiles').select('first_name').eq('email', user.email).single();
+      
+      const myName = myProfile?.first_name || user.email?.split('@')[0] || 'Me';
       setPlayers((prev) => prev.length === 0 ? [myName] : prev);
     }
     init();
@@ -48,7 +52,6 @@ export default function Play() {
   // --- GAME STATE ---
   const [step, setStep] = useState(1);
   const [selectedTee, setSelectedTee] = useState('White');
-  const [players, setPlayers] = useState<string[]>([]); 
   const [currentHoleIndex, setCurrentHoleIndex] = useState(0); 
   const [scores, setScores] = useState<Record<string, Record<number, number>>>({});
   const [saving, setSaving] = useState(false);
@@ -76,12 +79,11 @@ export default function Play() {
   // --- ACTIONS ---
   const addPlayerFromList = () => {
     if (!selectedUserToAdd) return;
-    // Extract username (part before @)
-    const nameToAdd = selectedUserToAdd.split('@')[0];
     
-    if (!players.includes(nameToAdd)) {
-      setPlayers([...players, nameToAdd]);
-      setSelectedUserToAdd(''); // Reset dropdown
+    // selectedUserToAdd is the Name (e.g. "Robb")
+    if (!players.includes(selectedUserToAdd)) {
+      setPlayers([...players, selectedUserToAdd]);
+      setSelectedUserToAdd(''); 
     }
   };
 
@@ -98,7 +100,6 @@ export default function Play() {
 
   const startGame = () => {
     if (players.length === 0) return alert("Add at least one player!");
-    
     const initialScores: any = {};
     players.forEach(p => initialScores[p] = {});
     setScores(initialScores);
@@ -157,12 +158,12 @@ export default function Play() {
     setStep(3);
   };
 
-  // --- COMPONENT: USER BADGE ---
+  // --- USER BADGE ---
   const UserBadge = () => (
     <div className="absolute top-4 right-4 bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/20 shadow-lg z-50 flex items-center gap-2">
       <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
       <span className="text-xs text-white font-medium tracking-wide">
-        {user?.email || 'Guest'}
+        {players[0] || 'Me'} {/* Shows your name now */}
       </span>
     </div>
   );
@@ -171,10 +172,11 @@ export default function Play() {
 
   // --- VIEW 1: SETUP ---
   if (step === 1) {
-    // Filter out users already added to the game so you can't add them twice
+    // Filter available users
     const availableToAdd = registeredUsers.filter(u => {
-      const uName = u.email.split('@')[0];
-      return !players.includes(uName);
+      // Use First Name if available, otherwise email
+      const displayName = u.first_name || u.email.split('@')[0];
+      return !players.includes(displayName);
     });
 
     return (
@@ -197,7 +199,7 @@ export default function Play() {
             {players.map((p, i) => (
               <div key={i} className="flex justify-between items-center bg-white p-3 rounded shadow-sm border border-gray-100">
                 <span className="font-bold text-lg">{p}</span>
-                {i > 0 && ( // Prevent removing yourself (Player 1)
+                {i > 0 && (
                   <button onClick={() => removePlayer(i)} className="text-red-500 text-sm font-bold hover:text-red-700">Remove</button>
                 )}
               </div>
@@ -212,9 +214,10 @@ export default function Play() {
               onChange={(e) => setSelectedUserToAdd(e.target.value)}
             >
               <option value="">-- Select a User --</option>
-              {availableToAdd.map((u: any) => (
-                <option key={u.email} value={u.email}>{u.email}</option>
-              ))}
+              {availableToAdd.map((u: any) => {
+                 const name = u.first_name || u.email.split('@')[0];
+                 return <option key={u.email} value={name}>{name}</option>
+              })}
             </select>
             <button 
               onClick={addPlayerFromList}
@@ -243,11 +246,9 @@ export default function Play() {
     return (
       <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center justify-center relative">
         <UserBadge /> 
-        
         <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-8 text-center text-gray-800">
           <div className="text-6xl mb-4">🎉</div>
           <h1 className="text-3xl font-bold mb-2 text-green-800">Round Complete!</h1>
-          <p className="text-gray-500 mb-6">Your scores have been posted.</p>
           <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
             {players.map(player => {
               const { totalStrokes, displayRel } = getPlayerTotals(player);
@@ -271,7 +272,6 @@ export default function Play() {
 
   // --- VIEW 2: PLAYING ---
   const currentHole = COURSE_DATA[currentHoleIndex];
-  
   const distRed = currentHole.distances?.red || 0;
   const distWhite = currentHole.distances?.white || 0;
   const distBlue = currentHole.distances?.blue || 0;
@@ -287,12 +287,9 @@ export default function Play() {
           </div>
           <div>
              <h2 className="text-4xl font-black uppercase tracking-tight">Hole {currentHole.hole}</h2>
-             <div className="text-green-200 font-bold text-xl">
-                Par {currentHole.par}
-             </div>
+             <div className="text-green-200 font-bold text-xl">Par {currentHole.par}</div>
           </div>
         </div>
-
         <div className="flex gap-2 mb-4">
           <div className="flex-1 bg-red-700 rounded-lg p-2 text-center border border-red-500 shadow-sm">
              <div className="text-xs uppercase font-bold text-red-200">Red</div>
@@ -307,27 +304,16 @@ export default function Play() {
              <div className="text-lg font-black">{distBlue}</div>
           </div>
         </div>
-
         <div className="bg-green-900/50 p-4 rounded-lg border border-green-600">
-           <p className="text-xl font-medium leading-relaxed text-white">
-             {currentHole.info}
-           </p>
+           <p className="text-xl font-medium leading-relaxed text-white">{currentHole.info}</p>
         </div>
       </div>
 
       <div className="mb-4 w-full h-64 md:h-80 bg-gray-800 rounded-xl overflow-hidden relative shadow-2xl border-2 border-gray-700">
         {currentHole.image ? (
-          <Image 
-            src={currentHole.image} 
-            alt={`Map of Hole ${currentHole.hole}`}
-            fill
-            className="object-cover"
-          />
+          <Image src={currentHole.image} alt={`Map of Hole ${currentHole.hole}`} fill className="object-cover" />
         ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center text-gray-500">
-             <span className="text-4xl mb-2">🗺️</span>
-             <span className="font-bold">No Map Image</span>
-          </div>
+          <div className="w-full h-full flex flex-col items-center justify-center text-gray-500"><span className="font-bold">No Map Image</span></div>
         )}
       </div>
 
