@@ -67,23 +67,28 @@ export default function Profile() {
     setter(formatted);
   };
 
-  async function updateProfile() {
-    setLoading(true);
-    const { error } = await supabase.from('profiles').upsert({
-      email: user.email, // Key to match
-      first_name: firstName,
-      last_name: lastName,
-      avatar_url: avatarUrl,
-      updated_at: new Date()
-    }, { onConflict: 'email' });
+ async function updateProfile() {
+  setLoading(true);
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        first_name: firstName,
+        last_name: lastName,
+        avatar_url: avatarUrl,
+        updated_at: new Date()
+      })
+      .eq('email', user.email); // Targets your specific row
 
-    if (error) {
-      alert("Error updating profile!");
-    } else {
-      alert("Profile Updated Successfully!");
-    }
+    if (error) throw error;
+    alert("Profile Updated Successfully!");
+  } catch (error: any) {
+    console.error("Update Error:", error);
+    alert("Error updating profile: " + error.message);
+  } finally {
     setLoading(false);
   }
+}
 
   async function uploadAvatar(event: any) {
     try {

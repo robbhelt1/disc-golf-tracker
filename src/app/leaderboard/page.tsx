@@ -1,184 +1,148 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/supabase';
+import { TEES } from '@/courseData';
 import Link from 'next/link';
-
-// *** ADMIN CONFIGURATION ***
-const ADMIN_EMAIL = 'helt@oncuetech.com'; 
-// ***************************
+import Image from 'next/image';
 
 export default function Leaderboard() {
-  const [scorecards, setScorecards] = useState<any[]>([]);
+  const [rounds, setRounds] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
-  
-  // --- FILTER STATE ---
-  const [filterTee, setFilterTee] = useState('All'); // 'All', 'Red', 'White', 'Blue'
+  const [filterTee, setFilterTee] = useState('All');
+  const [profiles, setProfiles] = useState<any>({}); // Map names to avatar URLs
 
   useEffect(() => {
-    fetchScores();
-    checkAdmin();
-  }, []);
+    fetchData();
+  }, [filterTee]);
 
-  async function checkAdmin() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user && user.email === ADMIN_EMAIL) {
-      setIsAdmin(true);
-    }
-  }
-
-  async function fetchScores() {
-    const { data, error } = await supabase
+  async function fetchData() {
+    setLoading(true);
+    
+    // 1. Fetch Rounds
+    let query = supabase
       .from('scorecards')
       .select('*')
-      .order('created_at', { ascending: false }); // Get newest first for the history list
+      .order('total_score', { ascending: true }); // Lowest score first
 
-    if (error) console.error('Error fetching:', error);
-    else setScorecards(data || []);
+    if (filterTee !== 'All') {
+      query = query.eq('tee_color', filterTee);
+    }
+
+    const { data: roundData, error } = await query;
+    
+    // 2. Fetch Profiles to get Avatars
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('first_name, avatar_url');
+
+    // Create a map: { "Robb": "https://...jpg", "Justin": "..." }
+    const profileMap: any = {};
+    if (profileData) {
+      profileData.forEach((p: any) => {
+        if(p.first_name) profileMap[p.first_name] = p.avatar_url;
+      });
+    }
+    setProfiles(profileMap);
+
+    if (error) console.error(error);
+    else setRounds(roundData || []);
     setLoading(false);
   }
 
-  async function deleteScore(id: number) {
-    if(!confirm("Are you sure you want to DELETE this round? This cannot be undone.")) return;
+  // --- DELETE FUNCTION ---
+  async function deleteRound(id: number) {
+    if(!confirm("Are you sure you want to delete this round?")) return;
     const { error } = await supabase.from('scorecards').delete().eq('id', id);
-    if (error) alert("Error deleting: " + error.message);
-    else {
-      alert("Round deleted.");
-      fetchScores();
-    }
+    if(error) alert(error.message);
+    else fetchData(); // Refresh list
   }
 
-  // --- ANALYTICS ENGINE ---
-  const playerStats: any = {};
-
-  // 1. Filter the raw list based on the dropdown
-  const filteredScorecards = scorecards.filter(card => {
-    if (filterTee === 'All') return true;
-    return card.tee_color === filterTee;
-  });
-
-  // 2. Calculate stats on the filtered list
-  filteredScorecards.forEach(card => {
-    const name = card.player_name;
-    if (!playerStats[name]) {
-      playerStats[name] = { name, rounds: 0, totalStrokes: 0, bestScore: 999 };
-    }
-    playerStats[name].rounds += 1;
-    playerStats[name].totalStrokes += card.total_score;
-    if (card.total_score < playerStats[name].bestScore) playerStats[name].bestScore = card.total_score;
-  });
-
-  // 3. Sort by Average Score (Ascending)
-  const leaderboardData = Object.values(playerStats).map((p: any) => ({
-    ...p,
-    average: (p.totalStrokes / p.rounds).toFixed(1)
-  })).sort((a: any, b: any) => a.average - b.average);
-
   return (
-    <div className="min-h-screen bg-green-900 text-white p-6">
-      {/* HEADER */}
-      <div className="flex justify-between items-center mb-6">
-        <Link href="/">
-          <button className="bg-green-700 hover:bg-green-600 text-white px-4 py-2 rounded-lg">&larr; Home</button>
-        </Link>
-        <h1 className="text-3xl font-bold">Leaderboard</h1>
-        <div className="w-16"></div>
-      </div>
+    <div className="min-h-screen bg-green-900 text-white p-4 pb-20 flex flex-col items-center">
+      <h1 className="text-3xl font-bold mb-4 flex items-center gap-2">
+        🏆 Leaderboard
+      </h1>
 
-      {/* --- FILTER DROPDOWN --- */}
-      <div className="flex justify-center mb-8">
-        <div className="bg-white p-2 rounded-xl shadow-lg flex items-center gap-3">
-          <span className="text-gray-500 font-bold text-sm uppercase pl-2">Filter Tees:</span>
-          <select 
-            value={filterTee}
-            onChange={(e) => setFilterTee(e.target.value)}
-            className="bg-gray-100 text-gray-800 font-bold py-2 px-4 rounded-lg outline-none cursor-pointer"
+      {/* TEE FILTER */}
+      <div className="flex gap-2 mb-6 w-full max-w-md overflow-x-auto pb-2">
+        <button 
+          onClick={() => setFilterTee('All')}
+          className={`px-4 py-2 rounded-full font-bold text-sm whitespace-nowrap ${filterTee === 'All' ? 'bg-white text-green-900' : 'bg-green-800 text-green-200'}`}
+        >
+          All Tees
+        </button>
+        {TEES.map(t => (
+          <button 
+            key={t}
+            onClick={() => setFilterTee(t)}
+            className={`px-4 py-2 rounded-full font-bold text-sm whitespace-nowrap ${filterTee === t ? 'bg-white text-green-900' : 'bg-green-800 text-green-200'}`}
           >
-            <option value="All">Show All</option>
-            <option value="Red">Red</option>
-            <option value="White">White</option>
-            <option value="Blue">Blue</option>
-          </select>
-        </div>
-      </div>
-
-      {/* TOP 3 STATS CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        {leaderboardData.slice(0, 3).map((player: any, index) => (
-          <div key={player.name} className={`p-4 rounded-xl shadow-lg text-center ${index === 0 ? 'bg-yellow-500 text-black' : 'bg-white text-gray-800'}`}>
-            <div className="text-4xl mb-2">{index === 0 ? '👑' : index === 1 ? '🥈' : '🥉'}</div>
-            <h2 className="text-2xl font-bold">{player.name}</h2>
-            <p className="font-bold text-xl mt-1">Avg: {player.average}</p>
-            <p className="text-sm opacity-80">Best: {player.bestScore}</p>
-          </div>
+            {t}
+          </button>
         ))}
       </div>
 
-      {/* DETAILED RANKING TABLE */}
-      <div className="bg-white rounded-xl shadow-2xl overflow-hidden text-gray-800 mb-8">
-        <table className="w-full text-left">
-          <thead className="bg-gray-200">
-            <tr>
-              <th className="p-4">Player</th>
-              <th className="p-4 text-center">Rounds</th>
-              <th className="p-4 text-center">Avg</th>
-              <th className="p-4 text-center">Best</th>
-            </tr>
-          </thead>
-          <tbody>
-            {leaderboardData.map((player: any, i) => (
-              <tr key={player.name} className="border-b hover:bg-gray-50">
-                <td className="p-4 font-bold">{i + 1}. {player.name}</td>
-                <td className="p-4 text-center">{player.rounds}</td>
-                <td className="p-4 text-center font-bold text-green-700">{player.average}</td>
-                <td className="p-4 text-center">{player.bestScore}</td>
-              </tr>
-            ))}
-            {leaderboardData.length === 0 && (
-              <tr>
-                <td colSpan={4} className="p-8 text-center text-gray-400 font-bold">No rounds found for {filterTee} Tees.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {/* LIST */}
+      <div className="w-full max-w-md space-y-3">
+        {loading ? (
+          <div className="text-center text-green-200 animate-pulse">Loading scores...</div>
+        ) : rounds.length === 0 ? (
+          <div className="text-center text-gray-400 bg-black/20 p-6 rounded-xl">No rounds recorded yet.</div>
+        ) : (
+          rounds.map((round, index) => {
+             const avatar = profiles[round.player_name]; // Look up avatar
 
-      {/* RECENT ROUNDS HISTORY (With Admin Controls) */}
-      <div className="mt-12">
-        <h2 className="text-2xl font-bold text-green-100 mb-4">Recent Rounds ({filterTee})</h2>
-        <div className="bg-green-800 rounded-xl p-4">
-          {filteredScorecards.map((card) => (
-            <div key={card.id} className="flex justify-between items-center border-b border-green-700 py-3 last:border-0">
-              <div>
-                <span className="font-bold text-lg text-white">{card.player_name}</span>
-                <span className="ml-3 text-green-300 text-sm">{new Date(card.created_at).toLocaleDateString()}</span>
-                <div className="text-xs text-green-400 mt-1">
-                  {card.tee_color} Tees | Total: {card.total_score}
+             return (
+              <div key={round.id} className="bg-white text-gray-800 p-4 rounded-xl shadow-lg flex items-center justify-between relative group">
+                
+                {/* RANK # */}
+                <div className="font-black text-2xl text-gray-300 w-8 text-center italic">
+                  {index + 1}
+                </div>
+
+                {/* AVATAR + PLAYER INFO */}
+                <div className="flex-1 px-4 flex items-center gap-3">
+                  {/* Avatar Image */}
+                  <div className="relative w-10 h-10 flex-shrink-0">
+                    {avatar ? (
+                      <Image 
+                        src={avatar} 
+                        alt={round.player_name} 
+                        fill 
+                        className="rounded-full object-cover border-2 border-gray-200"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-green-100 rounded-full flex items-center justify-center text-green-700 font-bold text-xs border-2 border-green-200">
+                        {round.player_name.charAt(0)}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="font-bold text-lg leading-tight">{round.player_name}</div>
+                    <div className="text-xs text-gray-500 font-bold uppercase">
+                      {round.tee_color} Tees • {new Date(round.created_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* SCORE */}
+                <div className="text-right">
+                  <div className="text-3xl font-black text-green-600 leading-none">{round.total_score}</div>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Score</div>
+                </div>
+
+                {/* ADMIN ACTIONS (Hidden by default, shown on hover/tap) */}
+                <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Link href={`/edit/${round.id}`}>
+                      <button className="bg-blue-500 text-white p-1 rounded-full shadow text-xs font-bold w-6 h-6">✎</button>
+                    </Link>
+                    <button onClick={() => deleteRound(round.id)} className="bg-red-500 text-white p-1 rounded-full shadow text-xs font-bold w-6 h-6">X</button>
                 </div>
               </div>
-
-              {/* ADMIN CONTROLS: EDIT & DELETE */}
-              {isAdmin && (
-                <div className="flex gap-2">
-                  <Link href={`/edit/${card.id}`}>
-                    <button className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-bold shadow-md">
-                      EDIT
-                    </button>
-                  </Link>
-                  <button 
-                    onClick={() => deleteScore(card.id)}
-                    className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm font-bold shadow-md"
-                  >
-                    DELETE
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
-          {filteredScorecards.length === 0 && (
-             <div className="text-center text-green-300 italic">No history found.</div>
-          )}
-        </div>
+             )
+          })
+        )}
       </div>
     </div>
   );
