@@ -36,9 +36,9 @@ export default function NavBar() {
       <div className="max-w-md mx-auto px-4">
         <div className="flex justify-between items-center h-16">
           
-          {/* LOGO LINK (Left) - NOW USES IMAGE */}
+          {/* LOGO LINK */}
           <Link href="/" className="flex items-center gap-2">
-            <div className="relative w-32 h-10"> {/* Container for wide logo */}
+            <div className="relative w-32 h-10"> 
               <Image 
                 src="/logo.png" 
                 alt="MVDG Logo" 
@@ -52,6 +52,14 @@ export default function NavBar() {
           {/* RIGHT LINKS */}
           {user ? (
             <div className="flex items-center gap-3 text-sm font-bold">
+              
+              {/* ADMIN LINK - ONLY VISIBLE TO ROBB */}
+              {user.email === 'helt@oncuetech.com' && (
+                <Link href="/admin" className="text-red-300 hover:text-red-100 uppercase text-xs border border-red-400/50 px-2 py-1 rounded bg-red-900/30">
+                  Admin
+                </Link>
+              )}
+
               <Link href="/leaderboard" className={`hover:text-green-300 ${pathname === '/leaderboard' ? 'text-green-300' : ''}`}>
                 Rank
               </Link>
