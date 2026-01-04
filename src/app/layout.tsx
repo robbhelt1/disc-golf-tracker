@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 import NavBar from "./components/NavBar"; 
 
@@ -35,6 +36,9 @@ export default function RootLayout({
         <footer className="bg-black/90 text-gray-500 text-center py-6 text-xs font-bold uppercase tracking-widest">
            App by Robb Helt. All Rights Reserved.
         </footer>
+
+        {/* Vercel Speed Insights */}
+        <SpeedInsights />
       </body>
     </html>
   );
