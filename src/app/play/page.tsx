@@ -124,12 +124,24 @@ export default function Play() {
     setStep(3);
   };
 
+  // --- COMPONENT: USER BADGE ---
+  const UserBadge = () => (
+    <div className="absolute top-4 right-4 bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/20 shadow-lg z-50 flex items-center gap-2">
+      <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
+      <span className="text-xs text-white font-medium tracking-wide">
+        {user?.email || 'Guest'}
+      </span>
+    </div>
+  );
+
   if (loadingUser) return <div className="min-h-screen bg-green-900 flex items-center justify-center text-white font-bold">Loading...</div>;
 
   // --- VIEW 1: SETUP ---
   if (step === 1) {
     return (
-      <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center">
+      <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center relative">
+        <UserBadge /> {/* <--- ADDED HERE */}
+        
         <Image src="/logo.png" width={120} height={120} alt="Logo" className="mb-4 rounded-full shadow-lg" />
         <h1 className="text-3xl font-bold mb-8">New Round Setup</h1>
         <div className="w-full max-w-md bg-white rounded-xl p-6 text-gray-800 shadow-2xl">
@@ -153,7 +165,9 @@ export default function Play() {
   // --- VIEW 3: SUMMARY ---
   if (step === 3) {
     return (
-      <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center justify-center">
+      <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center justify-center relative">
+        <UserBadge /> {/* <--- ADDED HERE */}
+        
         <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-8 text-center text-gray-800">
           <div className="text-6xl mb-4">🎉</div>
           <h1 className="text-3xl font-bold mb-2 text-green-800">Round Complete!</h1>
@@ -179,19 +193,19 @@ export default function Play() {
     );
   }
 
-  // --- VIEW 2: PLAYING (UPDATED FOR MULTIPLE TEES) ---
+  // --- VIEW 2: PLAYING ---
   const currentHole = COURSE_DATA[currentHoleIndex];
   
-  // Use safe defaults if distances are missing in data file
   const distRed = currentHole.distances?.red || 0;
   const distWhite = currentHole.distances?.white || 0;
   const distBlue = currentHole.distances?.blue || 0;
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-4 flex flex-col">
+    <div className="min-h-screen bg-gray-900 text-white p-4 flex flex-col relative">
+      <UserBadge /> {/* <--- ADDED HERE */}
       
       {/* HEADER SECTION */}
-      <div className="bg-green-800 p-4 rounded-xl mb-4 shadow-lg border border-green-700">
+      <div className="bg-green-800 p-4 rounded-xl mb-4 shadow-lg border border-green-700 mt-8"> {/* Added mt-8 to make room for badge */}
         
         {/* Row 1: Logo & Hole Number */}
         <div className="flex items-center gap-4 mb-4">
