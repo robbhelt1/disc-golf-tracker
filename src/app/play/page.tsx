@@ -31,7 +31,6 @@ export default function Play() {
   const [teams, setTeams] = useState<Team[]>([]);       // For Team Modes
   
   // --- SCORING STATE ---
-  // We store EVERY individual's score here, regardless of mode
   const [scores, setScores] = useState<Record<string, Record<number, number>>>({});
   
   const [step, setStep] = useState(1);
@@ -56,7 +55,6 @@ export default function Play() {
       const { data: myProfile } = await supabase.from('profiles').select('first_name').eq('email', user.email).single();
       const myName = myProfile?.first_name || user.email?.split('@')[0] || 'Me';
       
-      // Default to adding myself for solo modes
       setPlayers(prev => prev.length === 0 ? [myName] : prev);
     }
     init();
@@ -67,13 +65,14 @@ export default function Play() {
 
   // --- SCORING ENGINES ---
 
-  // 1. GET INDIVIDUAL STATS (Used in Solo Modes)
+  // 1. GET INDIVIDUAL STATS
   const getIndividualStats = (player: string) => {
     const playerScores = scores[player] || {};
     let total = 0;
     let par = 0;
     COURSE_DATA.forEach(h => {
-      if (playerScores[h.hole]) {
+      // Calculate total only for holes that have been played (score > 0)
+      if (playerScores[h.hole] && playerScores[h.hole] > 0) {
         total += playerScores[h.hole];
         par += h.par;
       }
@@ -87,13 +86,11 @@ export default function Play() {
   const getTeamStats = (team: Team) => {
     let teamTotal = 0;
     let teamPar = 0;
-    let currentHoleScore = 99; // Placeholder for current hole best
+    let currentHoleScore = 99; 
 
     // Calculate Total for completed holes
     COURSE_DATA.forEach(h => {
-      // Find the LOWEST score among all team members for this hole
       const memberScores = team.members.map(m => scores[m]?.[h.hole] || 0);
-      // Filter out 0s (unplayed) unless everyone has 0
       const playedScores = memberScores.filter(s => s > 0);
       
       if (playedScores.length > 0) {
@@ -103,7 +100,6 @@ export default function Play() {
       }
     });
 
-    // Calculate Current Hole Best (for display)
     const currentHoleNum = COURSE_DATA[currentHoleIndex].hole;
     const currentMemberScores = team.members.map(m => scores[m]?.[currentHoleNum] || COURSE_DATA[currentHoleIndex].par);
     currentHoleScore = Math.min(...currentMemberScores);
@@ -124,7 +120,7 @@ export default function Play() {
 
     COURSE_DATA.forEach((h) => {
       const holeScores = players.map(p => ({ name: p, score: scores[p]?.[h.hole] || 0 }));
-      if (holeScores.some(x => x.score === 0)) return; // Hole not finished by all
+      if (holeScores.some(x => x.score === 0)) return; 
 
       const minScore = Math.min(...holeScores.map(x => x.score));
       const winners = holeScores.filter(x => x.score === minScore);
@@ -140,6 +136,35 @@ export default function Play() {
   };
   const matchStandings = calculateMatchStandings();
 
+  // --- LIVE LEADERBOARD GENERATOR ---
+  const getLiveRankings = () => {
+    if (isTeamMode) {
+      // Sort Teams by Relation to Par (Low is Good)
+      return teams.map(t => {
+        const stats = getTeamStats(t);
+        return { name: t.name, score: stats.displayRel, sortVal: stats.rel, detail: stats.teamTotal };
+      }).sort((a, b) => a.sortVal - b.sortVal);
+    } 
+    else if (gameMode === 'Match Play') {
+      // Sort Players by Points (High is Good)
+      return players.map(p => ({
+        name: p,
+        score: `${matchStandings.points[p]} Pts`,
+        sortVal: matchStandings.points[p],
+        detail: ''
+      })).sort((a, b) => b.sortVal - a.sortVal);
+    } 
+    else {
+      // Sort Solo Stroke Play by Relation to Par (Low is Good)
+      return players.map(p => {
+        const stats = getIndividualStats(p);
+        return { name: p, score: stats.displayRel, sortVal: stats.rel, detail: stats.total };
+      }).sort((a, b) => a.sortVal - b.sortVal);
+    }
+  };
+
+  const liveRankings = getLiveRankings();
+
 
   // --- ACTIONS ---
 
@@ -147,21 +172,13 @@ export default function Play() {
     const size = gameMode.includes('Doubles') ? 2 : 3;
     const teamName = prompt(`Enter Team Name (e.g. 'Team Alpha'):`);
     if (!teamName) return;
-
-    // Helper to get member names
     const newMembers = [];
     for(let i=0; i<size; i++) {
-       // Ideally this would be a UI modal, but prompt works for MVP
-       // We can just type names or use the logic below to pick from dropdown later
-       // For now, let's keep it simple: Just type names or pick "Guest 1"
        const mName = prompt(`Enter Player ${i+1} Name for ${teamName}:`);
        if(mName) newMembers.push(mName);
        else newMembers.push(`${teamName} P${i+1}`);
     }
-
     setTeams([...teams, { name: teamName, members: newMembers }]);
-    
-    // Initialize scores for these new members
     const newScores = { ...scores };
     newMembers.forEach(m => newScores[m] = {});
     setScores(newScores);
@@ -206,33 +223,25 @@ export default function Play() {
   const finishRound = async () => {
     if(!confirm("Finish round and submit scores?")) return;
     setSaving(true);
-
-    // Prepare data to save
     const dataToInsert = [];
 
     if (isTeamMode) {
-      // Save 1 Scorecard PER TEAM
       for (const team of teams) {
         const { teamTotal } = getTeamStats(team);
-        
         const row: any = {
-          player_name: team.name, // The Team Name goes on the leaderboard
+          player_name: team.name,
           tee_color: selectedTee,
           total_score: teamTotal,
           game_mode: gameMode,
           created_by_user: user.email 
         };
-
-        // Fill in individual hole scores (Best Ball)
         COURSE_DATA.forEach(h => {
           const memberScores = team.members.map(m => scores[m]?.[h.hole] || h.par);
           row[`hole_${h.hole}`] = Math.min(...memberScores);
         });
-        
         dataToInsert.push(row);
       }
     } else {
-      // Save Individual Scorecards
       for (const player of players) {
          const { total } = getIndividualStats(player);
          const row: any = {
@@ -274,7 +283,6 @@ export default function Play() {
         <h1 className="text-2xl font-bold mb-4">Round Setup</h1>
         
         <div className="w-full max-w-md bg-white rounded-xl p-6 text-gray-800 shadow-2xl">
-          {/* MODE SELECTOR */}
           <label className="block font-bold mb-2">Game Mode</label>
           <div className="grid grid-cols-2 gap-2 mb-4">
             {MODES.map(m => (
@@ -289,7 +297,6 @@ export default function Play() {
             ))}
           </div>
 
-          {/* DYNAMIC PLAYER/TEAM SETUP */}
           <div className="mb-6">
              <div className="flex justify-between items-center mb-2">
                 <label className="font-bold">{isTeamMode ? "Teams" : "Players"}</label>
@@ -302,7 +309,6 @@ export default function Play() {
                 )}
              </div>
 
-             {/* SOLO LIST */}
              {!isTeamMode && (
                 <>
                   <div className="flex gap-2 mb-2">
@@ -323,7 +329,6 @@ export default function Play() {
                 </>
              )}
 
-             {/* TEAM LIST */}
              {isTeamMode && (
                 <div className="space-y-3">
                    {teams.map((t, i) => (
@@ -332,16 +337,13 @@ export default function Play() {
                             <span>{t.name}</span>
                             <button onClick={() => removeTeam(i)} className="text-red-500 text-xs">Remove</button>
                          </div>
-                         <div className="text-sm text-gray-600">
-                            {t.members.join(', ')}
-                         </div>
+                         <div className="text-sm text-gray-600">{t.members.join(', ')}</div>
                       </div>
                    ))}
                    {teams.length === 0 && <div className="text-gray-400 italic text-sm text-center">No teams added yet.</div>}
                 </div>
              )}
           </div>
-
           <button onClick={startGame} className="w-full bg-green-600 text-white font-bold py-3 rounded-lg text-xl shadow-lg">Start Game</button>
         </div>
       </div>
@@ -354,35 +356,13 @@ export default function Play() {
       <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center justify-center">
         <div className="bg-white rounded-xl shadow-2xl p-8 text-center text-gray-800 w-full max-w-md">
           <h1 className="text-3xl font-bold text-green-800 mb-2">Round Complete!</h1>
-          <p className="text-gray-500 mb-4">{gameMode}</p>
-          
           <div className="bg-gray-50 rounded-lg p-4 mb-4 text-left">
-            {isTeamMode ? (
-               // TEAM SUMMARY
-               teams.map((t, i) => {
-                  const { teamTotal, displayRel } = getTeamStats(t);
-                  return (
-                    <div key={i} className="flex justify-between border-b py-2">
-                       <span className="font-bold">{t.name}</span>
-                       <span className="font-bold text-green-700">{teamTotal} ({displayRel})</span>
-                    </div>
-                  )
-               })
-            ) : (
-               // SOLO SUMMARY
-               players.map(p => {
-                  const stats = gameMode === 'Match Play' 
-                     ? { main: matchStandings.points[p], sub: 'Pts' }
-                     : { main: getIndividualStats(p).total, sub: getIndividualStats(p).displayRel };
-                  
-                  return (
-                     <div key={p} className="flex justify-between border-b py-2">
-                        <span className="font-bold">{p}</span>
-                        <span className="font-bold text-green-700">{stats.main} <span className="text-xs text-gray-400">({stats.sub})</span></span>
-                     </div>
-                  )
-               })
-            )}
+             {liveRankings.map((r, i) => (
+                <div key={i} className="flex justify-between border-b py-2 last:border-0">
+                   <span className="font-bold">{r.name}</span>
+                   <span className="font-bold text-green-700">{r.score}</span>
+                </div>
+             ))}
           </div>
           <Link href="/leaderboard"><button className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg mb-2">Leaderboard</button></Link>
           <Link href="/"><button className="text-gray-400 font-bold text-sm">Home</button></Link>
@@ -405,15 +385,11 @@ export default function Play() {
            <h2 className="text-3xl font-black uppercase">Hole {currentHole.hole}</h2>
            <div className="text-green-200 font-bold text-xl">Par {currentHole.par}</div>
         </div>
-
-        {/* MATCH PLAY POT */}
         {gameMode === 'Match Play' && (
            <div className="bg-yellow-500 text-black font-bold p-1 rounded text-center mb-2 text-sm">
               Pot: {matchStandings.currentPot} (Skins)
            </div>
         )}
-
-        {/* DISTANCES */}
         <div className="flex gap-1 mb-2 text-center text-xs font-bold">
            <div className="flex-1 bg-red-700 p-1 rounded border-red-500">Red: {distRed}</div>
            <div className="flex-1 bg-gray-100 text-gray-800 p-1 rounded border-gray-300">White: {distWhite}</div>
@@ -438,15 +414,13 @@ export default function Play() {
               const { currentHoleScore, displayRel, teamTotal } = getTeamStats(team);
               return (
                  <div key={idx} className="bg-white rounded-xl overflow-hidden shadow-md text-gray-800 border-l-8 border-blue-600">
-                    {/* TEAM HEADER */}
                     <div className="bg-gray-100 p-2 flex justify-between items-center border-b">
                        <span className="font-bold text-lg text-blue-900">{team.name}</span>
                        <div className="text-right">
                           <span className="block font-black text-2xl leading-none">{currentHoleScore}</span>
-                          <span className="text-xs text-gray-500">Hole Score (Best Ball)</span>
+                          <span className="text-xs text-gray-500">Best Ball</span>
                        </div>
                     </div>
-                    {/* MEMBERS INPUT */}
                     <div className="p-2 space-y-2">
                        {team.members.map(member => (
                           <div key={member} className="flex justify-between items-center">
@@ -459,9 +433,6 @@ export default function Play() {
                           </div>
                        ))}
                     </div>
-                    <div className="bg-blue-50 px-2 py-1 text-xs text-right text-blue-800 font-bold">
-                       Total: {displayRel} ({teamTotal})
-                    </div>
                  </div>
               )
            })
@@ -469,15 +440,10 @@ export default function Play() {
            // SOLO MODE RENDER
            players.map(player => {
              const s = scores[player][currentHole.hole] || currentHole.par;
-             const stats = gameMode === 'Match Play' 
-                ? { main: matchStandings.points[player], label: 'Pts' }
-                : { main: getIndividualStats(player).displayRel, label: 'Tot' };
-
              return (
                <div key={player} className="bg-white rounded-xl p-3 flex justify-between items-center text-gray-800 shadow-md">
                  <div>
                     <div className="font-bold text-lg">{player}</div>
-                    <div className="text-xs text-gray-500 font-bold">{stats.label}: {stats.main}</div>
                  </div>
                  <div className="flex items-center gap-3">
                    <button onClick={() => updateScore(player, -1)} className="w-10 h-10 bg-red-100 text-red-600 rounded-full text-xl font-bold">-</button>
@@ -488,6 +454,35 @@ export default function Play() {
              )
            })
         )}
+
+        {/* --- LIVE STANDINGS SECTION (NEW) --- */}
+        <div className="mt-6">
+           <div className="bg-black/40 rounded-t-xl p-2 text-center text-green-200 font-bold uppercase text-xs tracking-widest border border-green-700 border-b-0">
+              Live Standings
+           </div>
+           <div className="bg-white rounded-b-xl overflow-hidden shadow-lg border border-gray-300">
+              <table className="w-full text-sm text-gray-800">
+                 <thead className="bg-gray-100 text-xs uppercase text-gray-500">
+                    <tr>
+                       <th className="py-2 px-3 text-left">#</th>
+                       <th className="py-2 px-3 text-left">Player/Team</th>
+                       <th className="py-2 px-3 text-right">Score</th>
+                    </tr>
+                 </thead>
+                 <tbody>
+                    {liveRankings.map((r, i) => (
+                       <tr key={i} className={`border-b last:border-0 ${i === 0 ? 'bg-yellow-50' : ''}`}>
+                          <td className="py-2 px-3 font-bold text-gray-400">{i + 1}</td>
+                          <td className="py-2 px-3 font-bold">{r.name}</td>
+                          <td className={`py-2 px-3 font-black text-right ${r.score.includes('-') || r.score.includes('+') ? (r.score.startsWith('+') ? 'text-red-500' : 'text-green-600') : 'text-gray-800'}`}>
+                             {r.score}
+                          </td>
+                       </tr>
+                    ))}
+                 </tbody>
+              </table>
+           </div>
+        </div>
 
       </div>
 
