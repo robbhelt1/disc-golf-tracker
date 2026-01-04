@@ -30,11 +30,11 @@ export default function Profile() {
     }
     setUser(user);
 
-    // Fetch Profile Info
+    // Fetch Profile Info using the ID column (the primary key)
     const { data, error } = await supabase
       .from('profiles')
       .select('first_name, last_name, avatar_url')
-      .eq('email', user.email)
+      .eq('id', user.id) 
       .single();
 
     if (data) {
@@ -47,7 +47,7 @@ export default function Profile() {
     const { data: rounds } = await supabase
       .from('scorecards')
       .select('total_score')
-      .eq('player_name', data?.first_name || user.email?.split('@')[0]); // Fallback logic
+      .eq('player_name', data?.first_name || user.email?.split('@')[0]);
 
     if (rounds && rounds.length > 0) {
       const scores = rounds.map(r => r.total_score);
@@ -62,33 +62,34 @@ export default function Profile() {
   // Helper to Capitalize First Letter
   const handleNameChange = (val: string, setter: any) => {
     if (!val) { setter(''); return; }
-    // Capitalize first letter, keep rest as typed
     const formatted = val.charAt(0).toUpperCase() + val.slice(1);
     setter(formatted);
   };
 
- async function updateProfile() {
-  setLoading(true);
-  try {
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        first_name: firstName,
-        last_name: lastName,
-        avatar_url: avatarUrl,
-        updated_at: new Date()
-      })
-      .eq('email', user.email); // Targets your specific row
+  async function updateProfile() {
+    setLoading(true);
+    try {
+      // Using upsert with the ID ensures we create OR update the correct row
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({
+          id: user.id, 
+          email: user.email,
+          first_name: firstName,
+          last_name: lastName,
+          avatar_url: avatarUrl,
+          updated_at: new Date()
+        });
 
-    if (error) throw error;
-    alert("Profile Updated Successfully!");
-  } catch (error: any) {
-    console.error("Update Error:", error);
-    alert("Error updating profile: " + error.message);
-  } finally {
-    setLoading(false);
+      if (error) throw error;
+      alert("Profile Updated Successfully!");
+    } catch (error: any) {
+      console.error("Update Error:", error);
+      alert("Error updating profile: " + error.message);
+    } finally {
+      setLoading(false);
+    }
   }
-}
 
   async function uploadAvatar(event: any) {
     try {
@@ -102,17 +103,13 @@ export default function Profile() {
       const fileName = `${user.id}-${Math.random()}.${fileExt}`;
       const filePath = `${fileName}`;
 
-      // 1. Upload to Supabase Storage
       let { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(filePath, file);
 
       if (uploadError) throw uploadError;
 
-      // 2. Get Public URL
       const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
-      
-      // 3. Update State (user still needs to click "Save Profile" to commit to DB, or we can auto-save here)
       setAvatarUrl(data.publicUrl);
       
     } catch (error: any) {
@@ -130,7 +127,6 @@ export default function Profile() {
       
       <div className="w-full max-w-md bg-white text-gray-800 rounded-xl p-6 shadow-2xl">
         
-        {/* AVATAR UPLOAD SECTION */}
         <div className="flex flex-col items-center mb-6">
           <div className="relative w-24 h-24 mb-4">
             {avatarUrl ? (
@@ -145,7 +141,6 @@ export default function Profile() {
                 No Pic
               </div>
             )}
-            {/* Hidden File Input */}
             <input
               type="file"
               id="single"
@@ -160,7 +155,6 @@ export default function Profile() {
           </p>
         </div>
 
-        {/* NAME INPUTS */}
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">First Name</label>
@@ -169,7 +163,7 @@ export default function Profile() {
               value={firstName}
               onChange={(e) => handleNameChange(e.target.value, setFirstName)}
               className="w-full p-3 border-2 border-gray-200 rounded-lg font-bold focus:border-green-500 outline-none"
-              placeholder="Robb"
+              placeholder="First Name"
             />
           </div>
           <div>
@@ -179,12 +173,11 @@ export default function Profile() {
               value={lastName}
               onChange={(e) => handleNameChange(e.target.value, setLastName)}
               className="w-full p-3 border-2 border-gray-200 rounded-lg font-bold focus:border-green-500 outline-none"
-              placeholder="Helt"
+              placeholder="Last Name"
             />
           </div>
         </div>
 
-        {/* STATS DISPLAY */}
         <div className="bg-gray-50 rounded-lg p-4 mb-6 flex justify-between text-center border border-gray-100">
            <div>
               <div className="text-xl font-black text-gray-800">{stats.rounds}</div>
