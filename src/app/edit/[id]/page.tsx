@@ -3,32 +3,35 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/supabase';
 import { useRouter, useParams } from 'next/navigation';
 import { COURSE_DATA } from '@/courseData';
-import Link from 'next/link';
 
 export default function EditScorecard() {
-  const params = useParams(); // Get the ID from the URL
+  const params = useParams(); 
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [scores, setScores] = useState<any>({});
   const [playerInfo, setPlayerInfo] = useState<any>({});
 
-  useEffect(() => {
-    if (params.id) fetchScorecard(params.id as string);
-  }, [params]);
+  // Parse ID correctly
+  // Note: useParams returns string or array. We force it to string.
+  const id = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
-  async function fetchScorecard(id: string) {
+  useEffect(() => {
+    if (id) fetchScorecard(id);
+  }, [id]);
+
+  async function fetchScorecard(scoreId: string) {
     const { data, error } = await supabase
       .from('scorecards')
       .select('*')
-      .eq('id', id)
+      .eq('id', scoreId)
       .single();
 
-    if (error) {
-      alert("Error finding scorecard");
-      router.push('/');
+    if (error || !data) {
+      console.error("Error:", error);
+      alert("Could not find round #" + scoreId);
+      router.push('/leaderboard');
     } else {
       setPlayerInfo(data);
-      // Extract just the hole scores into a clean object
       const loadedScores: any = {};
       COURSE_DATA.forEach(h => {
         loadedScores[h.hole] = data[`hole_${h.hole}`];
@@ -44,30 +47,28 @@ export default function EditScorecard() {
   };
 
   const saveChanges = async () => {
+    if (!id) return;
     setLoading(true);
     
-    // 1. Calculate new Total
     let newTotal = 0;
     Object.values(scores).forEach((s: any) => newTotal += s);
 
-    // 2. Prepare Data Object
     const updates: any = { total_score: newTotal };
     COURSE_DATA.forEach(h => {
       updates[`hole_${h.hole}`] = scores[h.hole];
     });
 
-    // 3. Send to Database
     const { error } = await supabase
       .from('scorecards')
       .update(updates)
-      .eq('id', params.id);
+      .eq('id', id);
 
     if (error) {
       alert("Error saving: " + error.message);
       setLoading(false);
     } else {
       alert("Scorecard Updated!");
-      router.back(); // Go back to where they came from
+      router.back(); 
     }
   };
 
@@ -76,7 +77,7 @@ export default function EditScorecard() {
   return (
     <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center">
       <h1 className="text-3xl font-bold mb-2">Edit Scorecard</h1>
-      <h2 className="text-xl text-green-200 mb-6">{playerInfo.player_name} - {playerInfo.tee_color} Tees</h2>
+      <h2 className="text-xl text-green-200 mb-6">{playerInfo.player_name}</h2>
 
       <div className="bg-white text-gray-800 rounded-xl p-6 w-full max-w-lg shadow-2xl">
         <div className="grid grid-cols-3 gap-4 mb-6">
@@ -91,7 +92,7 @@ export default function EditScorecard() {
                 <div>
                   <input 
                     type="number" 
-                    value={scores[h.hole]}
+                    value={scores[h.hole] || ''}
                     onChange={(e) => handleScoreChange(h.hole, e.target.value)}
                     className="w-full border-2 border-gray-200 rounded-lg p-2 text-center font-bold text-xl focus:border-green-500 outline-none"
                   />
