@@ -4,13 +4,14 @@ import { supabase } from '@/supabase';
 import { useRouter } from 'next/navigation';
 import { COURSE_DATA, TEES } from '@/courseData';
 import Link from 'next/link';
+import Image from 'next/image'; // <--- New Import
 
 export default function Play() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [loadingUser, setLoadingUser] = useState(true);
 
-  // --- 1. SECURITY CHECK ---
+  // --- SECURITY CHECK ---
   useEffect(() => {
     async function checkUser() {
       const { data: { user } } = await supabase.auth.getUser();
@@ -25,7 +26,7 @@ export default function Play() {
   }, [router]);
 
   // --- GAME STATE ---
-  const [step, setStep] = useState(1); // 1=Setup, 2=Playing, 3=Summary
+  const [step, setStep] = useState(1);
   const [selectedTee, setSelectedTee] = useState('White');
   const [players, setPlayers] = useState<string[]>(['']); 
   const [currentHoleIndex, setCurrentHoleIndex] = useState(0); 
@@ -96,12 +97,10 @@ export default function Play() {
     if (currentHoleIndex > 0) setCurrentHoleIndex(currentHoleIndex - 1);
   };
 
-  // --- FINISH ROUND: SAVE DATA & SHOW SUMMARY ---
   const finishRound = async () => {
     if(!confirm("Finish round and submit scores?")) return;
     setSaving(true);
 
-    // Save to Database
     for (const player of players) {
       const playerScores = scores[player];
       let total = 0;
@@ -122,13 +121,10 @@ export default function Play() {
     }
 
     setSaving(false);
-    setStep(3); // <--- GO TO SUMMARY SCREEN
+    setStep(3);
   };
 
-  // --- LOADING SCREEN ---
-  if (loadingUser) {
-    return <div className="min-h-screen bg-green-900 flex items-center justify-center text-white font-bold">Loading...</div>;
-  }
+  if (loadingUser) return <div className="min-h-screen bg-green-900 flex items-center justify-center text-white font-bold">Loading...</div>;
 
   // --- VIEW 1: SETUP ---
   if (step === 1) {
@@ -153,15 +149,14 @@ export default function Play() {
     );
   }
 
-  // --- VIEW 3: SUMMARY SCREEN (New!) ---
+  // --- VIEW 3: SUMMARY ---
   if (step === 3) {
     return (
       <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center justify-center">
         <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-8 text-center text-gray-800">
           <div className="text-6xl mb-4">🎉</div>
           <h1 className="text-3xl font-bold mb-2 text-green-800">Round Complete!</h1>
-          <p className="text-gray-500 mb-6">Your scores have been posted to the leaderboard.</p>
-
+          <p className="text-gray-500 mb-6">Your scores have been posted.</p>
           <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
             {players.map(player => {
               const { totalStrokes, displayRel } = getPlayerTotals(player);
@@ -176,36 +171,46 @@ export default function Play() {
               )
             })}
           </div>
-
-          <Link href="/leaderboard">
-            <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl text-xl shadow-lg mb-3">
-              View Leaderboard
-            </button>
-          </Link>
-          
-          <Link href="/">
-            <button className="text-gray-400 hover:text-gray-600 font-bold text-sm">
-              Back to Home
-            </button>
-          </Link>
+          <Link href="/leaderboard"><button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl text-xl shadow-lg mb-3">View Leaderboard</button></Link>
+          <Link href="/"><button className="text-gray-400 hover:text-gray-600 font-bold text-sm">Back to Home</button></Link>
         </div>
       </div>
     );
   }
 
-  // --- VIEW 2: PLAYING ---
+  // --- VIEW 2: PLAYING (UPDATED WITH IMAGE) ---
   const currentHole = COURSE_DATA[currentHoleIndex];
   return (
     <div className="min-h-screen bg-gray-900 text-white p-4 flex flex-col">
-      <div className="bg-green-800 p-4 rounded-xl mb-4 text-center shadow-lg border border-green-700">
-        <h2 className="text-4xl font-bold">Hole {currentHole.hole}</h2>
-        <div className="flex justify-center gap-6 mt-2 text-green-200 text-lg">
-          <span>Par {currentHole.par}</span>
-          <span>{currentHole.distance} ft</span>
+      {/* HOLE HEADER */}
+      <div className="bg-green-800 p-4 rounded-xl mb-3 text-center shadow-lg border border-green-700">
+        <div className="flex justify-between items-end mb-2">
+          <h2 className="text-4xl font-bold text-white">Hole {currentHole.hole}</h2>
+          <div className="text-right">
+            <div className="text-2xl font-bold text-green-200">Par {currentHole.par}</div>
+            <div className="text-sm text-green-300">{currentHole.distance} ft</div>
+          </div>
         </div>
-        <p className="mt-2 text-sm text-green-300 italic">{currentHole.info}</p>
+        <p className="text-sm text-green-200 italic border-t border-green-700 pt-2">{currentHole.info}</p>
       </div>
 
+      {/* --- NEW: HOLE IMAGE AREA --- */}
+      <div className="mb-4 w-full h-48 bg-gray-800 rounded-xl overflow-hidden relative shadow-inner border border-gray-700">
+        {currentHole.image ? (
+          <Image 
+            src={currentHole.image} 
+            alt={`Map of Hole ${currentHole.hole}`}
+            fill
+            className="object-cover"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-gray-600 font-bold">
+            No Map Available
+          </div>
+        )}
+      </div>
+
+      {/* PLAYERS LIST */}
       <div className="flex-1 overflow-y-auto space-y-3 pb-4">
         {players.map(player => {
           const s = scores[player][currentHole.hole] || currentHole.par;
@@ -215,20 +220,20 @@ export default function Play() {
           if (relativeScore > 0) scoreColor = "text-red-500";   
 
           return (
-            <div key={player} className="bg-white rounded-xl p-4 flex flex-col text-gray-800 shadow-md">
-              <div className="flex justify-between items-center mb-3 border-b border-gray-100 pb-2">
-                <span className="font-bold text-xl truncate max-w-[50%]">{player}</span>
-                <div className="flex items-center gap-2 bg-gray-50 px-3 py-1 rounded-lg">
-                   <span className={`font-bold ${scoreColor} text-lg`}>{displayRel}</span>
-                   <span className="text-gray-400 text-sm font-semibold">({totalStrokes})</span>
+            <div key={player} className="bg-white rounded-xl p-3 flex flex-col text-gray-800 shadow-md">
+              <div className="flex justify-between items-center mb-2 border-b border-gray-100 pb-2">
+                <span className="font-bold text-lg truncate max-w-[50%]">{player}</span>
+                <div className="flex items-center gap-2 bg-gray-50 px-2 py-1 rounded-lg">
+                   <span className={`font-bold ${scoreColor} text-base`}>{displayRel}</span>
+                   <span className="text-gray-400 text-xs font-semibold">({totalStrokes})</span>
                 </div>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Strokes</span>
                 <div className="flex items-center gap-4">
-                  <button onClick={() => updateScore(player, -1)} className="w-12 h-12 bg-red-100 text-red-600 rounded-full text-2xl font-bold flex items-center justify-center pb-1">-</button>
-                  <span className="text-4xl font-bold w-10 text-center text-gray-800">{s}</span>
-                  <button onClick={() => updateScore(player, 1)} className="w-12 h-12 bg-green-100 text-green-600 rounded-full text-2xl font-bold flex items-center justify-center pb-1">+</button>
+                  <button onClick={() => updateScore(player, -1)} className="w-10 h-10 bg-red-100 text-red-600 rounded-full text-xl font-bold flex items-center justify-center pb-1">-</button>
+                  <span className="text-3xl font-bold w-8 text-center text-gray-800">{s}</span>
+                  <button onClick={() => updateScore(player, 1)} className="w-10 h-10 bg-green-100 text-green-600 rounded-full text-xl font-bold flex items-center justify-center pb-1">+</button>
                 </div>
               </div>
             </div>

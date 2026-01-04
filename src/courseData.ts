@@ -1,6 +1,26 @@
 export const COURSE_DATA = [
-  { hole: 1, par: 3, distance: 190, info: "On or past any sidewalk is OB. If you go OB, please take 1 stroke and tee at the Red Tee Box " },
-  { hole: 2, par: 3, distance: 245, info: "Water is OB. Drop zone for this hole is on the furthest back manhole cover on the lake to the left" },
-  { hole: 3, par: 4, distance: 330, info: "Yards are OB and all water on left is OB." },
+  { 
+    hole: 1, 
+    par: 3, 
+    distance: 250, 
+    info: "Watch out for the creek on the left.", 
+    image: "/hole1.jpg" // <--- The new image link
+  },
+  { 
+    hole: 2, 
+    par: 4, 
+    distance: 400, 
+    info: "Dogleg right. Big tree in the middle.", 
+    image: "/hole2.jpg"
+  },
+  { 
+    hole: 3, 
+    par: 3, 
+    distance: 300, 
+    info: "Straight shot.", 
+    image: "/hole3.jpg"
+  },
+  // ... Continue for all 18 holes
 ];
+
 export const TEES = ['Red', 'White', 'Blue'];
