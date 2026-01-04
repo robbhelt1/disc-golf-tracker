@@ -136,4 +136,135 @@ export default function Play() {
   // --- LOADING SCREEN ---
   if (loadingUser) {
     return (
-      <div className="min-h-screen bg-green-9
+      <div className="min-h-screen bg-green-900 flex items-center justify-center text-white">
+        <h1 className="text-2xl font-bold animate-pulse">Loading Game...</h1>
+      </div>
+    );
+  }
+
+  // --- VIEW 1: SETUP SCREEN ---
+  if (step === 1) {
+    return (
+      <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center">
+        <h1 className="text-3xl font-bold mb-8">New Round Setup</h1>
+        
+        <div className="w-full max-w-md bg-white rounded-xl p-6 text-gray-800 shadow-2xl">
+          {/* TEES */}
+          <label className="block font-bold mb-2 text-gray-700">Select Tees</label>
+          <div className="flex gap-2 mb-6">
+            {TEES.map(tee => (
+              <button
+                key={tee}
+                onClick={() => setSelectedTee(tee)}
+                className={`flex-1 py-3 rounded-lg font-bold border-2 transition-all ${selectedTee === tee ? 'bg-green-600 text-white border-green-600 shadow-md' : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'}`}
+              >
+                {tee}
+              </button>
+            ))}
+          </div>
+
+          {/* PLAYERS */}
+          <label className="block font-bold mb-2 text-gray-700">Who is playing?</label>
+          {players.map((p, i) => (
+            <input
+              key={i}
+              type="text"
+              placeholder={`Player ${i + 1} Name`}
+              value={p}
+              onChange={(e) => updatePlayerName(i, e.target.value)}
+              className="w-full p-3 mb-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-green-500 font-medium"
+            />
+          ))}
+          
+          <button onClick={addPlayer} className="text-green-600 font-bold text-sm mb-8 flex items-center gap-1 hover:text-green-800 transition-colors">
+            <span>+</span> Add Another Player
+          </button>
+
+          <button onClick={startGame} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl text-xl shadow-lg transition-transform active:scale-95">
+            Start Game
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // --- VIEW 2: PLAYING SCREEN ---
+  const currentHole = COURSE_DATA[currentHoleIndex];
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-white p-4 flex flex-col">
+      {/* HOLE HEADER */}
+      <div className="bg-green-800 p-4 rounded-xl mb-4 text-center shadow-lg border border-green-700">
+        <h2 className="text-4xl font-bold text-white">Hole {currentHole.hole}</h2>
+        <div className="flex justify-center gap-6 mt-2 text-green-200 text-lg font-medium">
+          <span>Par {currentHole.par}</span>
+          <span>{currentHole.distance} ft</span>
+        </div>
+        <p className="mt-2 text-sm text-green-300 italic">{currentHole.info}</p>
+      </div>
+
+      {/* PLAYER CARDS */}
+      <div className="flex-1 overflow-y-auto space-y-3 pb-4">
+        {players.map(player => {
+          const s = scores[player][currentHole.hole] || currentHole.par;
+          const { totalStrokes, displayRel, relativeScore } = getPlayerTotals(player);
+          
+          // Color Logic: Green for good (-), Red for bad (+), Gray for Even
+          let scoreColor = "text-gray-500";
+          if (relativeScore < 0) scoreColor = "text-green-600"; 
+          if (relativeScore > 0) scoreColor = "text-red-500";   
+
+          return (
+            <div key={player} className="bg-white rounded-xl p-4 flex flex-col text-gray-800 shadow-md">
+              {/* TOP ROW: Name + Real-time Stats */}
+              <div className="flex justify-between items-center mb-3 border-b border-gray-100 pb-2">
+                <span className="font-bold text-xl truncate max-w-[50%]">{player}</span>
+                <div className="flex items-center gap-2 bg-gray-50 px-3 py-1 rounded-lg">
+                   <span className={`font-bold ${scoreColor} text-lg`}>{displayRel}</span>
+                   <span className="text-gray-400 text-sm font-semibold">({totalStrokes})</span>
+                </div>
+              </div>
+
+              {/* BOTTOM ROW: The Buttons */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Strokes</span>
+                <div className="flex items-center gap-4">
+                  <button 
+                    onClick={() => updateScore(player, -1)} 
+                    className="w-12 h-12 bg-red-100 text-red-600 rounded-full text-2xl font-bold hover:bg-red-200 transition-colors flex items-center justify-center pb-1"
+                  >-</button>
+                  
+                  <span className="text-4xl font-bold w-10 text-center text-gray-800">{s}</span>
+                  
+                  <button 
+                    onClick={() => updateScore(player, 1)} 
+                    className="w-12 h-12 bg-green-100 text-green-600 rounded-full text-2xl font-bold hover:bg-green-200 transition-colors flex items-center justify-center pb-1"
+                  >+</button>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* NAVIGATION FOOTER */}
+      <div className="mt-auto pt-2 flex gap-3">
+        {currentHoleIndex > 0 && (
+          <button 
+            onClick={prevHole}
+            className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-4 rounded-xl text-lg shadow-lg transition-colors"
+          >
+            &lt; Prev
+          </button>
+        )}
+        
+        <button 
+          onClick={nextHole}
+          className="flex-[2] bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl text-lg shadow-lg transition-colors"
+        >
+          {currentHoleIndex < COURSE_DATA.length - 1 ? 'Next Hole >' : 'Finish Round'}
+        </button>
+      </div>
+    </div>
+  );
+}

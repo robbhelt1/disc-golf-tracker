@@ -4,7 +4,7 @@ import { supabase } from '@/supabase';
 import Link from 'next/link';
 
 // *** CHANGE THIS TO YOUR EMAIL ***
-const ADMIN_EMAIL = 'helt@oncuetech.com; // Example: replace with your real email
+const ADMIN_EMAIL = 'helt@oncuetech.com'; // Example: replace with your real email
 // ********************************
 
 export default function Leaderboard() {
