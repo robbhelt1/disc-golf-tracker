@@ -206,7 +206,18 @@ export default function Play() {
     return (
       <Container>
         <div className="p-6 flex flex-col items-center">
-          <Image src="/logo.png" width={100} height={100} alt="Logo" className="mb-4 rounded-full shadow-lg" />
+          
+          {/* UPDATED LOGO CONTAINER (WIDE) */}
+          <div className="bg-white p-4 rounded-xl shadow-lg mb-6 w-full max-w-xs">
+             <Image 
+               src="/logo.png" 
+               width={300} 
+               height={100} 
+               alt="Logo" 
+               className="w-full h-auto object-contain" 
+             />
+          </div>
+
           <h1 className="text-2xl font-bold mb-4">Round Setup</h1>
           <div className="w-full bg-white rounded-xl p-6 text-gray-800 shadow-lg">
             <label className="block font-bold mb-2 text-sm uppercase text-gray-500">Game Mode</label>
@@ -372,7 +383,7 @@ export default function Play() {
               })
             )}
 
-            {/* --- MOVED NAVIGATION BUTTONS HERE --- */}
+            {/* --- INLINE NAVIGATION BUTTONS --- */}
             <div className="flex gap-3 my-4">
               {currentHoleIndex > 0 && (
                 <button onClick={prevHole} className="flex-1 bg-gray-700 text-white font-bold py-3 rounded-xl shadow-lg border border-gray-600 active:scale-95 transition-transform">

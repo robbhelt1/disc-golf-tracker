@@ -1,5 +1,6 @@
 'use client';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/supabase';
 import { useEffect, useState } from 'react';
@@ -16,7 +17,6 @@ export default function NavBar() {
     };
     getUser();
     
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
     });
@@ -29,7 +29,6 @@ export default function NavBar() {
     router.push('/login');
   };
 
-  // Hide Navbar on Login/Signup pages
   if (pathname === '/login' || pathname === '/signup') return null;
 
   return (
@@ -37,15 +36,21 @@ export default function NavBar() {
       <div className="max-w-md mx-auto px-4">
         <div className="flex justify-between items-center h-16">
           
-          {/* HOME LINK (Left) */}
-          <Link href="/" className="font-bold text-xl tracking-tight flex items-center gap-2">
-            <span>🌲</span>
-            <span>MVDG</span>
+          {/* LOGO LINK (Left) - NOW USES IMAGE */}
+          <Link href="/" className="flex items-center gap-2">
+            <div className="relative w-32 h-10"> {/* Container for wide logo */}
+              <Image 
+                src="/logo.png" 
+                alt="MVDG Logo" 
+                fill
+                className="object-contain object-left" 
+                priority
+              />
+            </div>
           </Link>
 
           {/* RIGHT LINKS */}
           {user ? (
-            // LOGGED IN MENU
             <div className="flex items-center gap-3 text-sm font-bold">
               <Link href="/leaderboard" className={`hover:text-green-300 ${pathname === '/leaderboard' ? 'text-green-300' : ''}`}>
                 Rank
@@ -64,7 +69,6 @@ export default function NavBar() {
               </button>
             </div>
           ) : (
-            // GUEST MENU
             <div className="flex gap-4 font-bold text-sm">
                <Link href="/about" className="hover:text-green-300">About</Link>
                <Link href="/login" className="hover:text-green-300">Log In</Link>

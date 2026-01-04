@@ -9,7 +9,6 @@ export default function Home() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
 
-  // Check if user is logged in so we know whether to show "Sign Out"
   useEffect(() => {
     async function getUser() {
       const { data: { user } } = await supabase.auth.getUser();
@@ -21,13 +20,12 @@ export default function Home() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setUser(null);
-    router.push('/login'); // Send them to login screen
+    router.push('/login');
   };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-green-900 text-white relative">
       
-      {/* --- LOGOUT BUTTON (Top Right) --- */}
       {user && (
         <button 
           onClick={handleLogout}
@@ -39,23 +37,23 @@ export default function Home() {
 
       <main className="flex flex-col items-center p-6 text-center">
         
-        {/* LOGO AREA */}
-        <div className="mb-8 bg-white p-4 rounded-full shadow-lg">
+        {/* LOGO AREA - UPDATED FOR WIDE LOGO */}
+        <div className="mb-8 bg-white p-6 rounded-xl shadow-lg w-full max-w-xs">
           <Image 
             src="/logo.png" 
             alt="App Logo" 
-            width={150} 
-            height={150} 
-            className="rounded-full"
+            width={300} 
+            height={100} 
+            className="w-full h-auto object-contain" // Allow it to be its natural shape
           />
         </div>
 
         <h1 className="text-4xl font-bold mb-2">
-           Mountain Valley Disc Golf
+           Mountain Valley
         </h1>
         
         <h2 className="text-xl font-light mb-8 text-green-200">
-           Official Scoring App
+           Disc Golf Scoring
         </h2>
 
         <div className="w-full max-w-xs bg-white rounded-xl shadow-2xl overflow-hidden p-6 text-gray-800">
@@ -66,14 +64,16 @@ export default function Home() {
               Start New Round
             </button>
           </Link>
-          <Link href="/profile">
-            <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-xl shadow-md transition-all mb-4">
-              My Profile
+          
+          <Link href="/leaderboard">
+            <button className="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold py-3 px-4 rounded-lg mb-4">
+              View Leaderboard
             </button>
           </Link>
-          <Link href="/leaderboard">
-            <button className="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold py-3 px-4 rounded-lg">
-              View Leaderboard
+
+          <Link href="/profile">
+            <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-xl shadow-md transition-all">
+              My Profile
             </button>
           </Link>
         </div>
