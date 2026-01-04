@@ -14,10 +14,11 @@ export default function Play() {
   // --- USER DIRECTORY STATE ---
   const [registeredUsers, setRegisteredUsers] = useState<any[]>([]);
   const [selectedUserToAdd, setSelectedUserToAdd] = useState('');
-  // We now store players as OBJECTS: { name: "Robb", email: "..." }
-  // But to keep your scoring logic simple for now, we will still just use names in the 'players' array
-  // and map them smartly.
   const [players, setPlayers] = useState<string[]>([]); 
+  
+  // --- GAME MODES ---
+  const MODES = ['Stroke Play', 'Match Play'];
+  const [gameMode, setGameMode] = useState('Stroke Play');
 
   // --- INIT ---
   useEffect(() => {
@@ -31,7 +32,7 @@ export default function Play() {
       setUser(user);
       setLoadingUser(false);
 
-      // 2. Fetch User Directory (Now getting first_name too)
+      // 2. Fetch User Directory
       const { data: profiles } = await supabase
         .from('profiles')
         .select('email, first_name')
@@ -39,10 +40,8 @@ export default function Play() {
       
       if (profiles) setRegisteredUsers(profiles);
       
-      // Auto-add MYSELF (using my first_name if available)
-      // We check the profiles table for *my* name, or use metadata
+      // Auto-add MYSELF
       const { data: myProfile } = await supabase.from('profiles').select('first_name').eq('email', user.email).single();
-      
       const myName = myProfile?.first_name || user.email?.split('@')[0] || 'Me';
       setPlayers((prev) => prev.length === 0 ? [myName] : prev);
     }
@@ -56,8 +55,10 @@ export default function Play() {
   const [scores, setScores] = useState<Record<string, Record<number, number>>>({});
   const [saving, setSaving] = useState(false);
 
-  // --- HELPER: CALCULATE TOTALS ---
-  const getPlayerTotals = (player: string) => {
+  // --- SCORING ENGINES ---
+
+  // 1. STROKE PLAY (Standard)
+  const getStrokeStats = (player: string) => {
     const playerScores = scores[player] || {};
     let totalStrokes = 0;
     let totalPar = 0;
@@ -73,14 +74,77 @@ export default function Play() {
     let displayRel = relativeScore > 0 ? `+${relativeScore}` : `${relativeScore}`;
     if (relativeScore === 0) displayRel = "E";
 
-    return { totalStrokes, displayRel, relativeScore };
+    return { 
+      mainScore: totalStrokes, 
+      subScore: `(${displayRel})`, 
+      relativeScore 
+    };
   };
+
+  // 2. MATCH PLAY (Skins / Carry-over)
+  // Logic: Iterate through all completed holes. 
+  // If a player has the UNIQUE lowest score, they win the "Pot".
+  // If tied for lowest, "Pot" increases for next hole.
+  const calculateMatchStandings = () => {
+    const points: Record<string, number> = {};
+    players.forEach(p => points[p] = 0);
+    
+    let currentPot = 1;
+
+    // Loop through all holes up to current
+    COURSE_DATA.forEach((h, index) => {
+      // Stop if we haven't played this hole yet (unless we are on it right now, check if scores exist)
+      // Actually, only calc completed holes or current if scores entered?
+      // Let's calc for ALL holes that have scores for everyone.
+      
+      const holeScores = players.map(p => ({ 
+        name: p, 
+        score: scores[p]?.[h.hole] || 0 
+      }));
+
+      // If anyone has a 0 (unplayed), stop calculating
+      if (holeScores.some(x => x.score === 0)) return;
+
+      // Find lowest score
+      const minScore = Math.min(...holeScores.map(x => x.score));
+      
+      // Who got that score?
+      const winners = holeScores.filter(x => x.score === minScore);
+
+      if (winners.length === 1) {
+        // ONE WINNER -> They take the pot
+        points[winners[0].name] += currentPot;
+        currentPot = 1; // Reset pot
+      } else {
+        // TIE -> Pot carries over
+        currentPot += 1;
+      }
+    });
+
+    return { points, currentPot };
+  };
+
+  const matchStandings = calculateMatchStandings();
+
+  // --- WRAPPER TO GET STATS BASED ON MODE ---
+  const getPlayerDisplayStats = (player: string) => {
+    if (gameMode === 'Stroke Play') {
+      return getStrokeStats(player);
+    } else {
+      // Match Play
+      const pts = matchStandings.points[player] || 0;
+      return {
+        mainScore: pts,
+        subScore: "Points",
+        relativeScore: -pts // Invert for color logic (Higher points = Green/Good)
+      };
+    }
+  };
+
 
   // --- ACTIONS ---
   const addPlayerFromList = () => {
     if (!selectedUserToAdd) return;
-    
-    // selectedUserToAdd is the Name (e.g. "Robb")
     if (!players.includes(selectedUserToAdd)) {
       setPlayers([...players, selectedUserToAdd]);
       setSelectedUserToAdd(''); 
@@ -143,7 +207,8 @@ export default function Play() {
       const dataToSave: any = {
         player_name: player,
         tee_color: selectedTee,
-        total_score: total,
+        total_score: total, // We still save strokes for history
+        game_mode: gameMode, // <--- NEW FIELD
         created_by_user: user.email 
       };
 
@@ -163,7 +228,7 @@ export default function Play() {
     <div className="absolute top-4 right-4 bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/20 shadow-lg z-50 flex items-center gap-2">
       <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
       <span className="text-xs text-white font-medium tracking-wide">
-        {players[0] || 'Me'} {/* Shows your name now */}
+        {players[0] || 'Me'}
       </span>
     </div>
   );
@@ -172,9 +237,7 @@ export default function Play() {
 
   // --- VIEW 1: SETUP ---
   if (step === 1) {
-    // Filter available users
     const availableToAdd = registeredUsers.filter(u => {
-      // Use First Name if available, otherwise email
       const displayName = u.first_name || u.email.split('@')[0];
       return !players.includes(displayName);
     });
@@ -182,11 +245,30 @@ export default function Play() {
     return (
       <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center relative">
         <UserBadge /> 
-        
         <Image src="/logo.png" width={120} height={120} alt="Logo" className="mb-4 rounded-full shadow-lg" />
         <h1 className="text-3xl font-bold mb-6">New Round Setup</h1>
         
         <div className="w-full max-w-md bg-white rounded-xl p-6 text-gray-800 shadow-2xl">
+          
+          {/* GAME MODE SELECTOR */}
+          <label className="block font-bold mb-2">Game Mode</label>
+          <div className="flex gap-2 mb-6">
+            {MODES.map(m => (
+              <button 
+                key={m} 
+                onClick={() => setGameMode(m)} 
+                className={`flex-1 py-3 rounded-lg font-bold border-2 ${gameMode === m ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-400'}`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+          {gameMode === 'Match Play' && (
+            <p className="text-sm text-gray-500 mb-6 italic bg-blue-50 p-2 rounded border border-blue-100">
+              ℹ️ <strong>Rules:</strong> Lowest score wins the hole. Ties carry over to the next hole (Skins).
+            </p>
+          )}
+
           <label className="block font-bold mb-2">Select Tees</label>
           <div className="flex gap-2 mb-6">
             {TEES.map(tee => (
@@ -199,43 +281,24 @@ export default function Play() {
             {players.map((p, i) => (
               <div key={i} className="flex justify-between items-center bg-white p-3 rounded shadow-sm border border-gray-100">
                 <span className="font-bold text-lg">{p}</span>
-                {i > 0 && (
-                  <button onClick={() => removePlayer(i)} className="text-red-500 text-sm font-bold hover:text-red-700">Remove</button>
-                )}
+                {i > 0 && <button onClick={() => removePlayer(i)} className="text-red-500 text-sm font-bold">Remove</button>}
               </div>
             ))}
           </div>
 
           <label className="block font-bold mb-2">Add From Directory</label>
           <div className="flex gap-2 mb-4">
-            <select 
-              className="flex-1 p-3 border-2 rounded-lg bg-white"
-              value={selectedUserToAdd}
-              onChange={(e) => setSelectedUserToAdd(e.target.value)}
-            >
+            <select className="flex-1 p-3 border-2 rounded-lg bg-white" value={selectedUserToAdd} onChange={(e) => setSelectedUserToAdd(e.target.value)}>
               <option value="">-- Select a User --</option>
               {availableToAdd.map((u: any) => {
                  const name = u.first_name || u.email.split('@')[0];
                  return <option key={u.email} value={name}>{name}</option>
               })}
             </select>
-            <button 
-              onClick={addPlayerFromList}
-              disabled={!selectedUserToAdd}
-              className={`px-4 rounded-lg font-bold text-white ${selectedUserToAdd ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-300'}`}
-            >
-              Add
-            </button>
+            <button onClick={addPlayerFromList} disabled={!selectedUserToAdd} className="bg-green-600 text-white px-4 rounded-lg font-bold">Add</button>
           </div>
 
-          <div className="text-center mb-6">
-             <span className="text-gray-400 text-sm">- OR -</span>
-             <button onClick={addManualPlayer} className="block w-full mt-2 text-green-600 font-bold border-2 border-green-600 rounded-lg py-2 hover:bg-green-50">
-               Add Guest (Manual Name)
-             </button>
-          </div>
-
-          <button onClick={startGame} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl text-xl shadow-lg">Start Game</button>
+          <button onClick={startGame} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl text-xl shadow-lg mt-4">Start Game</button>
         </div>
       </div>
     );
@@ -249,15 +312,16 @@ export default function Play() {
         <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-8 text-center text-gray-800">
           <div className="text-6xl mb-4">🎉</div>
           <h1 className="text-3xl font-bold mb-2 text-green-800">Round Complete!</h1>
+          <p className="text-gray-500 mb-6">Mode: {gameMode}</p>
           <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
             {players.map(player => {
-              const { totalStrokes, displayRel } = getPlayerTotals(player);
+              const stats = getPlayerDisplayStats(player);
               return (
                 <div key={player} className="flex justify-between items-center border-b border-gray-200 last:border-0 py-3">
                   <span className="font-bold text-lg">{player}</span>
                   <div className="text-right">
-                    <span className="block font-bold text-2xl text-green-700">{totalStrokes}</span>
-                    <span className="text-sm text-gray-400">({displayRel})</span>
+                    <span className="block font-bold text-2xl text-green-700">{stats.mainScore}</span>
+                    <span className="text-sm text-gray-400">{gameMode === 'Match Play' ? 'Points Won' : stats.subScore}</span>
                   </div>
                 </div>
               )
@@ -281,6 +345,7 @@ export default function Play() {
       <UserBadge /> 
       
       <div className="bg-green-800 p-4 rounded-xl mb-4 shadow-lg border border-green-700 mt-8"> 
+        {/* HEADER */}
         <div className="flex items-center gap-4 mb-4">
           <div className="bg-white p-1 rounded-full shadow-md">
             <Image src="/logo.png" width={60} height={60} alt="Logo" className="rounded-full" />
@@ -290,6 +355,16 @@ export default function Play() {
              <div className="text-green-200 font-bold text-xl">Par {currentHole.par}</div>
           </div>
         </div>
+
+        {/* MATCH PLAY POT INDICATOR */}
+        {gameMode === 'Match Play' && (
+           <div className="bg-yellow-500 text-black font-bold p-2 rounded-lg text-center mb-4 shadow-md">
+              <span className="text-sm uppercase tracking-wide">Hole Value (Pot)</span>
+              <div className="text-2xl">{matchStandings.currentPot} Points</div>
+              <div className="text-xs font-normal">Ties carry over to next hole!</div>
+           </div>
+        )}
+
         <div className="flex gap-2 mb-4">
           <div className="flex-1 bg-red-700 rounded-lg p-2 text-center border border-red-500 shadow-sm">
              <div className="text-xs uppercase font-bold text-red-200">Red</div>
@@ -320,18 +395,22 @@ export default function Play() {
       <div className="flex-1 overflow-y-auto space-y-3 pb-4">
         {players.map(player => {
           const s = scores[player][currentHole.hole] || currentHole.par;
-          const { totalStrokes, displayRel, relativeScore } = getPlayerTotals(player);
+          
+          // DYNAMIC STATS (Stroke or Match)
+          const stats = getPlayerDisplayStats(player);
+          
           let scoreColor = "text-gray-500";
-          if (relativeScore < 0) scoreColor = "text-green-600"; 
-          if (relativeScore > 0) scoreColor = "text-red-500";   
+          if (stats.relativeScore < 0) scoreColor = "text-green-600"; // Good
+          if (stats.relativeScore > 0) scoreColor = "text-red-500";   // Bad (or low points)
 
           return (
             <div key={player} className="bg-white rounded-xl p-3 flex flex-col text-gray-800 shadow-md">
               <div className="flex justify-between items-center mb-2 border-b border-gray-100 pb-2">
                 <span className="font-bold text-xl truncate max-w-[50%]">{player}</span>
                 <div className="flex items-center gap-2 bg-gray-100 px-3 py-1 rounded-lg">
-                   <span className={`font-black ${scoreColor} text-lg`}>{displayRel}</span>
-                   <span className="text-gray-500 text-sm font-bold">({totalStrokes})</span>
+                   {/* In Match Play, this shows Points */}
+                   <span className={`font-black ${scoreColor} text-lg`}>{stats.mainScore}</span>
+                   <span className="text-gray-500 text-sm font-bold">{stats.subScore}</span>
                 </div>
               </div>
               <div className="flex items-center justify-between">
