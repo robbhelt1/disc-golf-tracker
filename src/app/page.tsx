@@ -1,9 +1,42 @@
+'use client';
 import Image from "next/image";
-import Link from "next/link"; // <--- This is the magic tool we need
+import Link from "next/link";
+import { supabase } from '@/supabase';
+import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
 
 export default function Home() {
+  const router = useRouter();
+  const [user, setUser] = useState<any>(null);
+
+  // Check if user is logged in so we know whether to show "Sign Out"
+  useEffect(() => {
+    async function getUser() {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+    }
+    getUser();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    router.push('/login'); // Send them to login screen
+  };
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-green-900 text-white">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-green-900 text-white relative">
+      
+      {/* --- LOGOUT BUTTON (Top Right) --- */}
+      {user && (
+        <button 
+          onClick={handleLogout}
+          className="absolute top-4 right-4 bg-black/20 hover:bg-black/40 text-green-200 text-xs font-bold py-2 px-4 rounded-full border border-green-700 transition-all"
+        >
+          Sign Out ({user.email?.split('@')[0]})
+        </button>
+      )}
+
       <main className="flex flex-col items-center p-6 text-center">
         
         {/* LOGO AREA */}
@@ -28,14 +61,11 @@ export default function Home() {
         <div className="w-full max-w-xs bg-white rounded-xl shadow-2xl overflow-hidden p-6 text-gray-800">
           <p className="mb-6 text-lg font-medium">Ready to hit the chains?</p>
           
-          {/* --- THE FIX IS HERE --- */}
-          {/* We are wrapping the button in a Link so it acts like a door to the next room */}
           <Link href="/play">
             <button className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-6 rounded-lg text-xl shadow-md transition-all mb-4">
               Start New Round
             </button>
           </Link>
-          {/* ----------------------- */}
           
           <Link href="/leaderboard">
             <button className="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold py-3 px-4 rounded-lg">
