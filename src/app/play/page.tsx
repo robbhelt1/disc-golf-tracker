@@ -11,24 +11,44 @@ export default function Play() {
   const [user, setUser] = useState<any>(null);
   const [loadingUser, setLoadingUser] = useState(true);
 
-  // --- SECURITY CHECK ---
+  // --- NEW: USER DIRECTORY STATE ---
+  const [registeredUsers, setRegisteredUsers] = useState<any[]>([]);
+  const [selectedUserToAdd, setSelectedUserToAdd] = useState('');
+
+  // --- SECURITY CHECK & DATA FETCH ---
   useEffect(() => {
-    async function checkUser() {
+    async function init() {
+      // 1. Check Auth
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.push('/login'); 
-      } else {
-        setUser(user);
-        setLoadingUser(false);
+        return;
       }
+      setUser(user);
+      setLoadingUser(false);
+
+      // 2. Fetch All Registered Users
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('email, username')
+        .neq('email', user.email); // Don't show myself in the dropdown
+      
+      if (profiles) {
+        setRegisteredUsers(profiles);
+      }
+      
+      // Auto-add the logged-in user as Player 1
+      const myName = user.email?.split('@')[0] || 'Me';
+      // Only set players if empty (prevents reset on re-render)
+      setPlayers((prev) => prev.length === 0 ? [myName] : prev);
     }
-    checkUser();
+    init();
   }, [router]);
 
   // --- GAME STATE ---
   const [step, setStep] = useState(1);
   const [selectedTee, setSelectedTee] = useState('White');
-  const [players, setPlayers] = useState<string[]>(['']); 
+  const [players, setPlayers] = useState<string[]>([]); 
   const [currentHoleIndex, setCurrentHoleIndex] = useState(0); 
   const [scores, setScores] = useState<Record<string, Record<number, number>>>({});
   const [saving, setSaving] = useState(false);
@@ -54,21 +74,34 @@ export default function Play() {
   };
 
   // --- ACTIONS ---
-  const addPlayer = () => setPlayers([...players, '']);
-  const updatePlayerName = (index: number, name: string) => {
-    const newPlayers = [...players];
-    newPlayers[index] = name;
-    setPlayers(newPlayers);
+  const addPlayerFromList = () => {
+    if (!selectedUserToAdd) return;
+    // Extract username (part before @)
+    const nameToAdd = selectedUserToAdd.split('@')[0];
+    
+    if (!players.includes(nameToAdd)) {
+      setPlayers([...players, nameToAdd]);
+      setSelectedUserToAdd(''); // Reset dropdown
+    }
+  };
+
+  const addManualPlayer = () => {
+    const name = prompt("Enter Guest Name:");
+    if (name && !players.includes(name)) {
+      setPlayers([...players, name]);
+    }
+  };
+
+  const removePlayer = (indexToRemove: number) => {
+    setPlayers(players.filter((_, i) => i !== indexToRemove));
   };
 
   const startGame = () => {
-    const realPlayers = players.filter(p => p.trim() !== '');
-    if (realPlayers.length === 0) return alert("Add at least one player!");
+    if (players.length === 0) return alert("Add at least one player!");
     
     const initialScores: any = {};
-    realPlayers.forEach(p => initialScores[p] = {});
+    players.forEach(p => initialScores[p] = {});
     setScores(initialScores);
-    setPlayers(realPlayers);
     setStep(2);
   };
 
@@ -138,12 +171,19 @@ export default function Play() {
 
   // --- VIEW 1: SETUP ---
   if (step === 1) {
+    // Filter out users already added to the game so you can't add them twice
+    const availableToAdd = registeredUsers.filter(u => {
+      const uName = u.email.split('@')[0];
+      return !players.includes(uName);
+    });
+
     return (
       <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center relative">
-        <UserBadge /> {/* <--- ADDED HERE */}
+        <UserBadge /> 
         
         <Image src="/logo.png" width={120} height={120} alt="Logo" className="mb-4 rounded-full shadow-lg" />
-        <h1 className="text-3xl font-bold mb-8">New Round Setup</h1>
+        <h1 className="text-3xl font-bold mb-6">New Round Setup</h1>
+        
         <div className="w-full max-w-md bg-white rounded-xl p-6 text-gray-800 shadow-2xl">
           <label className="block font-bold mb-2">Select Tees</label>
           <div className="flex gap-2 mb-6">
@@ -151,11 +191,47 @@ export default function Play() {
               <button key={tee} onClick={() => setSelectedTee(tee)} className={`flex-1 py-3 rounded-lg font-bold border-2 ${selectedTee === tee ? 'bg-green-600 text-white border-green-600' : 'bg-gray-50'}`}>{tee}</button>
             ))}
           </div>
-          <label className="block font-bold mb-2">Who is playing?</label>
-          {players.map((p, i) => (
-            <input key={i} type="text" placeholder={`Player ${i + 1} Name`} value={p} onChange={(e) => updatePlayerName(i, e.target.value)} className="w-full p-3 mb-3 border-2 rounded-lg" />
-          ))}
-          <button onClick={addPlayer} className="text-green-600 font-bold text-sm mb-8">+ Add Another Player</button>
+
+          <label className="block font-bold mb-2">Current Players</label>
+          <div className="bg-gray-50 rounded-lg p-2 mb-4 space-y-2">
+            {players.map((p, i) => (
+              <div key={i} className="flex justify-between items-center bg-white p-3 rounded shadow-sm border border-gray-100">
+                <span className="font-bold text-lg">{p}</span>
+                {i > 0 && ( // Prevent removing yourself (Player 1)
+                  <button onClick={() => removePlayer(i)} className="text-red-500 text-sm font-bold hover:text-red-700">Remove</button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <label className="block font-bold mb-2">Add From Directory</label>
+          <div className="flex gap-2 mb-4">
+            <select 
+              className="flex-1 p-3 border-2 rounded-lg bg-white"
+              value={selectedUserToAdd}
+              onChange={(e) => setSelectedUserToAdd(e.target.value)}
+            >
+              <option value="">-- Select a User --</option>
+              {availableToAdd.map((u: any) => (
+                <option key={u.email} value={u.email}>{u.email}</option>
+              ))}
+            </select>
+            <button 
+              onClick={addPlayerFromList}
+              disabled={!selectedUserToAdd}
+              className={`px-4 rounded-lg font-bold text-white ${selectedUserToAdd ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-300'}`}
+            >
+              Add
+            </button>
+          </div>
+
+          <div className="text-center mb-6">
+             <span className="text-gray-400 text-sm">- OR -</span>
+             <button onClick={addManualPlayer} className="block w-full mt-2 text-green-600 font-bold border-2 border-green-600 rounded-lg py-2 hover:bg-green-50">
+               Add Guest (Manual Name)
+             </button>
+          </div>
+
           <button onClick={startGame} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl text-xl shadow-lg">Start Game</button>
         </div>
       </div>
@@ -166,7 +242,7 @@ export default function Play() {
   if (step === 3) {
     return (
       <div className="min-h-screen bg-green-900 text-white p-6 flex flex-col items-center justify-center relative">
-        <UserBadge /> {/* <--- ADDED HERE */}
+        <UserBadge /> 
         
         <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-8 text-center text-gray-800">
           <div className="text-6xl mb-4">🎉</div>
@@ -202,12 +278,9 @@ export default function Play() {
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-4 flex flex-col relative">
-      <UserBadge /> {/* <--- ADDED HERE */}
+      <UserBadge /> 
       
-      {/* HEADER SECTION */}
-      <div className="bg-green-800 p-4 rounded-xl mb-4 shadow-lg border border-green-700 mt-8"> {/* Added mt-8 to make room for badge */}
-        
-        {/* Row 1: Logo & Hole Number */}
+      <div className="bg-green-800 p-4 rounded-xl mb-4 shadow-lg border border-green-700 mt-8"> 
         <div className="flex items-center gap-4 mb-4">
           <div className="bg-white p-1 rounded-full shadow-md">
             <Image src="/logo.png" width={60} height={60} alt="Logo" className="rounded-full" />
@@ -220,7 +293,6 @@ export default function Play() {
           </div>
         </div>
 
-        {/* Row 2: The 3 Distance Badges */}
         <div className="flex gap-2 mb-4">
           <div className="flex-1 bg-red-700 rounded-lg p-2 text-center border border-red-500 shadow-sm">
              <div className="text-xs uppercase font-bold text-red-200">Red</div>
@@ -236,7 +308,6 @@ export default function Play() {
           </div>
         </div>
 
-        {/* Row 3: Hole Info */}
         <div className="bg-green-900/50 p-4 rounded-lg border border-green-600">
            <p className="text-xl font-medium leading-relaxed text-white">
              {currentHole.info}
@@ -244,7 +315,6 @@ export default function Play() {
         </div>
       </div>
 
-      {/* MAP IMAGE AREA */}
       <div className="mb-4 w-full h-64 md:h-80 bg-gray-800 rounded-xl overflow-hidden relative shadow-2xl border-2 border-gray-700">
         {currentHole.image ? (
           <Image 
@@ -261,7 +331,6 @@ export default function Play() {
         )}
       </div>
 
-      {/* PLAYERS LIST */}
       <div className="flex-1 overflow-y-auto space-y-3 pb-4">
         {players.map(player => {
           const s = scores[player][currentHole.hole] || currentHole.par;
