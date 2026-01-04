@@ -3,14 +3,17 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/supabase';
 import Link from 'next/link';
 
-// *** CHANGE THIS TO YOUR EMAIL ***
-const ADMIN_EMAIL = 'helt@oncuetech.com'; // Example: replace with your real email
-// ********************************
+// *** MAKE SURE THIS MATCHES YOUR LOGIN EMAIL ***
+const ADMIN_EMAIL = 'helt@oncuetech.com'; 
+// **********************************************
 
 export default function Leaderboard() {
   const [scorecards, setScorecards] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  
+  // --- NEW: FILTER STATE ---
+  const [filterTee, setFilterTee] = useState('All'); // 'All', 'Red', 'White', 'Blue'
 
   useEffect(() => {
     fetchScores();
@@ -19,7 +22,6 @@ export default function Leaderboard() {
 
   async function checkAdmin() {
     const { data: { user } } = await supabase.auth.getUser();
-    // Only set "isAdmin" to true if the email matches YOUR email
     if (user && user.email === ADMIN_EMAIL) {
       setIsAdmin(true);
     }
@@ -38,12 +40,7 @@ export default function Leaderboard() {
 
   async function deleteScore(id: number) {
     if(!confirm("Are you sure you want to DELETE this round?")) return;
-
-    const { error } = await supabase
-      .from('scorecards')
-      .delete()
-      .eq('id', id);
-
+    const { error } = await supabase.from('scorecards').delete().eq('id', id);
     if (error) alert("Error deleting: " + error.message);
     else {
       alert("Round deleted.");
@@ -51,9 +48,17 @@ export default function Leaderboard() {
     }
   }
 
-  // --- ANALYTICS ENGINE (Same as before) ---
+  // --- ANALYTICS ENGINE (With Filter) ---
   const playerStats: any = {};
-  scorecards.forEach(card => {
+
+  // 1. First, filter the raw list based on the dropdown
+  const filteredScorecards = scorecards.filter(card => {
+    if (filterTee === 'All') return true;
+    return card.tee_color === filterTee;
+  });
+
+  // 2. Then calculate stats on the filtered list
+  filteredScorecards.forEach(card => {
     const name = card.player_name;
     if (!playerStats[name]) {
       playerStats[name] = { name, rounds: 0, totalStrokes: 0, bestScore: 999 };
@@ -70,12 +75,29 @@ export default function Leaderboard() {
 
   return (
     <div className="min-h-screen bg-green-900 text-white p-6">
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex justify-between items-center mb-6">
         <Link href="/">
           <button className="bg-green-700 hover:bg-green-600 text-white px-4 py-2 rounded-lg">&larr; Home</button>
         </Link>
         <h1 className="text-3xl font-bold">Leaderboard</h1>
-        <div className="w-20"></div>
+        <div className="w-16"></div>
+      </div>
+
+      {/* --- FILTER DROPDOWN --- */}
+      <div className="flex justify-center mb-8">
+        <div className="bg-white p-2 rounded-xl shadow-lg flex items-center gap-3">
+          <span className="text-gray-500 font-bold text-sm uppercase pl-2">Filter Tees:</span>
+          <select 
+            value={filterTee}
+            onChange={(e) => setFilterTee(e.target.value)}
+            className="bg-gray-100 text-gray-800 font-bold py-2 px-4 rounded-lg outline-none cursor-pointer"
+          >
+            <option value="All">Show All</option>
+            <option value="Red">Red</option>
+            <option value="White">White</option>
+            <option value="Blue">Blue</option>
+          </select>
+        </div>
       </div>
 
       {/* STATS CARDS */}
@@ -85,6 +107,7 @@ export default function Leaderboard() {
             <div className="text-4xl mb-2">{index === 0 ? '👑' : index === 1 ? '🥈' : '🥉'}</div>
             <h2 className="text-2xl font-bold">{player.name}</h2>
             <p className="font-bold text-xl mt-1">Avg: {player.average}</p>
+            <p className="text-sm opacity-80">Best: {player.bestScore}</p>
           </div>
         ))}
       </div>
@@ -109,23 +132,29 @@ export default function Leaderboard() {
                 <td className="p-4 text-center">{player.bestScore}</td>
               </tr>
             ))}
+            {leaderboardData.length === 0 && (
+              <tr>
+                <td colSpan={4} className="p-8 text-center text-gray-400 font-bold">No rounds found for {filterTee} Tees.</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
 
-      {/* RECENT ROUNDS (Admin Only Delete) */}
+      {/* RECENT ROUNDS (With Admin Delete) */}
       <div className="mt-12">
-        <h2 className="text-2xl font-bold text-green-100 mb-4">Recent Rounds History</h2>
+        <h2 className="text-2xl font-bold text-green-100 mb-4">Recent Rounds ({filterTee})</h2>
         <div className="bg-green-800 rounded-xl p-4">
-          {scorecards.map((card) => (
+          {filteredScorecards.map((card) => (
             <div key={card.id} className="flex justify-between items-center border-b border-green-700 py-3 last:border-0">
               <div>
                 <span className="font-bold text-lg text-white">{card.player_name}</span>
                 <span className="ml-3 text-green-300 text-sm">{new Date(card.created_at).toLocaleDateString()}</span>
-                <div className="text-xs text-green-400 mt-1">Total: {card.total_score}</div>
+                <div className="text-xs text-green-400 mt-1">
+                  {card.tee_color} Tees | Total: {card.total_score}
+                </div>
               </div>
 
-              {/* ONLY SHOW THIS BUTTON IF YOU ARE THE ADMIN */}
               {isAdmin && (
                 <button 
                   onClick={() => deleteScore(card.id)}

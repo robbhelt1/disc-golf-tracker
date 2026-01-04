@@ -66,7 +66,11 @@ export default function Home() {
               Start New Round
             </button>
           </Link>
-          
+          <Link href="/profile">
+            <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-xl shadow-md transition-all mb-4">
+              My Profile
+            </button>
+          </Link>
           <Link href="/leaderboard">
             <button className="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold py-3 px-4 rounded-lg">
               View Leaderboard
