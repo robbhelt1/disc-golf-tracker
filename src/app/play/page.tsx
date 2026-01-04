@@ -315,7 +315,7 @@ export default function Play() {
         </div>
 
         {/* SCROLLABLE CONTENT AREA */}
-        <div className="flex-1 overflow-y-auto bg-gray-900 pb-20"> {/* pb-20 prevents content hiding behind fixed buttons */}
+        <div className="flex-1 overflow-y-auto bg-gray-900">
           
           {/* MAP (Slightly shorter) */}
           <div className="w-full h-40 bg-gray-800 relative border-b border-gray-700 shadow-inner">
@@ -372,6 +372,22 @@ export default function Play() {
               })
             )}
 
+            {/* --- MOVED NAVIGATION BUTTONS HERE --- */}
+            <div className="flex gap-3 my-4">
+              {currentHoleIndex > 0 && (
+                <button onClick={prevHole} className="flex-1 bg-gray-700 text-white font-bold py-3 rounded-xl shadow-lg border border-gray-600 active:scale-95 transition-transform">
+                   &lt; Prev
+                </button>
+              )}
+              <button 
+                 onClick={nextHole} 
+                 disabled={saving} 
+                 className={`flex-[3] text-white font-bold py-3 rounded-xl shadow-lg active:scale-95 transition-transform ${saving ? 'bg-gray-500' : 'bg-blue-600 hover:bg-blue-500'}`}
+              >
+                 {saving ? 'Saving...' : (currentHoleIndex < 17 ? 'Next Hole >' : 'Finish Round')}
+              </button>
+            </div>
+
             {/* LIVE STANDINGS */}
             <div className="mt-6">
               <div className="bg-gray-800 rounded-t-lg p-1 text-center text-gray-400 font-bold uppercase text-[10px] tracking-widest border border-gray-700 border-b-0">
@@ -394,24 +410,6 @@ export default function Play() {
               </div>
             </div>
           </div>
-        </div>
-
-        {/* FIXED FOOTER CONTROLS */}
-        <div className="absolute bottom-4 left-0 right-0 px-4">
-           <div className="flex gap-3 max-w-md mx-auto">
-              {currentHoleIndex > 0 && (
-                <button onClick={prevHole} className="flex-1 bg-gray-700 text-white font-bold py-3 rounded-xl shadow-lg border border-gray-600 backdrop-blur-sm active:scale-95 transition-transform">
-                   &lt; Prev
-                </button>
-              )}
-              <button 
-                 onClick={nextHole} 
-                 disabled={saving} 
-                 className={`flex-[3] text-white font-bold py-3 rounded-xl shadow-lg active:scale-95 transition-transform ${saving ? 'bg-gray-500' : 'bg-blue-600 hover:bg-blue-500'}`}
-              >
-                 {saving ? 'Saving...' : (currentHoleIndex < 17 ? 'Next Hole >' : 'Finish Round')}
-              </button>
-           </div>
         </div>
 
       </div>
