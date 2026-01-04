@@ -179,8 +179,14 @@ export default function Play() {
     );
   }
 
-  // --- VIEW 2: PLAYING (REDESIGNED) ---
+  // --- VIEW 2: PLAYING (UPDATED FOR MULTIPLE TEES) ---
   const currentHole = COURSE_DATA[currentHoleIndex];
+  
+  // Use safe defaults if distances are missing in data file
+  const distRed = currentHole.distances?.red || 0;
+  const distWhite = currentHole.distances?.white || 0;
+  const distBlue = currentHole.distances?.blue || 0;
+
   return (
     <div className="min-h-screen bg-gray-900 text-white p-4 flex flex-col">
       
@@ -194,15 +200,29 @@ export default function Play() {
           </div>
           <div>
              <h2 className="text-4xl font-black uppercase tracking-tight">Hole {currentHole.hole}</h2>
-             <div className="flex gap-4 text-green-200 font-bold text-lg">
-                <span>Par {currentHole.par}</span>
-                <span>•</span>
-                <span>{currentHole.distance} ft</span>
+             <div className="text-green-200 font-bold text-xl">
+                Par {currentHole.par}
              </div>
           </div>
         </div>
 
-        {/* Row 2: The Big Info Text (No longer tiny/italic) */}
+        {/* Row 2: The 3 Distance Badges */}
+        <div className="flex gap-2 mb-4">
+          <div className="flex-1 bg-red-700 rounded-lg p-2 text-center border border-red-500 shadow-sm">
+             <div className="text-xs uppercase font-bold text-red-200">Red</div>
+             <div className="text-lg font-black">{distRed}</div>
+          </div>
+          <div className="flex-1 bg-gray-100 rounded-lg p-2 text-center border border-gray-300 shadow-sm">
+             <div className="text-xs uppercase font-bold text-gray-500">White</div>
+             <div className="text-lg font-black text-gray-800">{distWhite}</div>
+          </div>
+          <div className="flex-1 bg-blue-700 rounded-lg p-2 text-center border border-blue-500 shadow-sm">
+             <div className="text-xs uppercase font-bold text-blue-200">Blue</div>
+             <div className="text-lg font-black">{distBlue}</div>
+          </div>
+        </div>
+
+        {/* Row 3: Hole Info */}
         <div className="bg-green-900/50 p-4 rounded-lg border border-green-600">
            <p className="text-xl font-medium leading-relaxed text-white">
              {currentHole.info}
@@ -210,8 +230,7 @@ export default function Play() {
         </div>
       </div>
 
-      {/* MAP IMAGE AREA (Taller now!) */}
-      {/* We use h-64 (256px) or h-72 depending on screen size to really use the space */}
+      {/* MAP IMAGE AREA */}
       <div className="mb-4 w-full h-64 md:h-80 bg-gray-800 rounded-xl overflow-hidden relative shadow-2xl border-2 border-gray-700">
         {currentHole.image ? (
           <Image 
@@ -231,6 +250,7 @@ export default function Play() {
       {/* PLAYERS LIST */}
       <div className="flex-1 overflow-y-auto space-y-3 pb-4">
         {players.map(player => {
+          // Determine standard par based on selected tee? Usually par is same, but just in case
           const s = scores[player][currentHole.hole] || currentHole.par;
           const { totalStrokes, displayRel, relativeScore } = getPlayerTotals(player);
           let scoreColor = "text-gray-500";
