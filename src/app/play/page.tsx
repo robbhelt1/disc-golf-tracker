@@ -1,8 +1,8 @@
-// THIS LINE FIXES THE VERCEL BUILD ERROR
+'use client';
+// This line MUST be second. It fixes the "Prerender Error" by skipping static generation.
 export const dynamic = 'force-dynamic';
 
-'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 // DATA EMBEDDED DIRECTLY TO PREVENT IMPORT ERRORS
@@ -12,10 +12,9 @@ const courseData = [
   { hole: 3, par: 4, distances: { red: 300, white: 400, blue: 520 }, info: "Long dogleg right. Ideal landing zone is past the large oak.", image: "/hole1.jpg" },
   { hole: 4, par: 3, distances: { red: 180, white: 220, blue: 260 }, info: "Island green. If you miss the island, proceed to drop zone.", image: "/hole1.jpg" },
   { hole: 5, par: 3, distances: { red: 250, white: 300, blue: 350 }, info: "Uphill battle. Plays 20 feet longer than marked.", image: "/hole1.jpg" },
-  // You can add holes 6-18 here later
 ];
 
-export default function PlayPage() {
+function PlayContent() {
   const searchParams = useSearchParams();
   const [currentHoleIndex, setCurrentHoleIndex] = useState(0);
   const [playerNames, setPlayerNames] = useState<string[]>([]);
@@ -25,15 +24,14 @@ export default function PlayPage() {
 
   useEffect(() => {
     const names: string[] = [];
-    // Grab names from URL (p0, p1, p2...)
     let i = 0;
+    // Grab names from URL safely
     while (true) {
       const name = searchParams.get(`p${i}`);
-      if (!name && i > 5) break; // Stop checking after reasonable limit
+      if (!name && i > 5) break; 
       if (name) names.push(name);
       i++;
     }
-    // Fallback if no names found
     if (names.length === 0) names.push("Player 1");
     setPlayerNames(names);
   }, [searchParams]);
@@ -69,7 +67,7 @@ export default function PlayPage() {
         </div>
       </div>
 
-      {/* IMAGE - USING STANDARD IMG TAG FOR SAFETY */}
+      {/* IMAGE */}
       <div className="relative w-full h-48 rounded-2xl overflow-hidden mb-4 border-2 border-zinc-800 bg-zinc-900 shadow-2xl">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img 
@@ -147,5 +145,13 @@ export default function PlayPage() {
         </button>
       </div>
     </div>
+  );
+}
+
+export default function PlayPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-black text-white p-10">Loading Round...</div>}>
+      <PlayContent />
+    </Suspense>
   );
 }
