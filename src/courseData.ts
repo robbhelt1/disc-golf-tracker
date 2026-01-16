@@ -8,9 +8,9 @@ export const COURSE_DATA = [
   },
   { 
     hole: 2, 
-    par: 4, 
-    distances: { red: 350, white: 400, blue: 450 }, 
-    info: "Dogleg right. Big tree in the middle.", 
+    par: 3, 
+    distances: { red:1 , white:2 , blue:3  }, 
+    info: "Dogleg right.",
     image: "/hole2.jpg"
   },
   { 
